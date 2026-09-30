@@ -1,0 +1,534 @@
+:root {
+  --app-bg: #fafafa;
+  --card-shadow: 0 1px 2px rgba(16, 12, 24, 0.04), 0 4px 12px rgba(16, 12, 24, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --app-bg: #16171d;
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  text-align: left;
+  background: var(--app-bg);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.app-brand {
+  font-weight: 700;
+  color: var(--text-h);
+  text-decoration: none;
+  font-size: 19px;
+  letter-spacing: -0.2px;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.app-nav a {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+  position: relative;
+}
+
+.app-nav a:hover {
+  color: var(--text-h);
+}
+
+.app-nav a.app-nav-active {
+  color: var(--accent);
+}
+
+.app-nav-user {
+  color: var(--text-h);
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.app-main {
+  flex: 1;
+  padding: 32px 28px 56px;
+  box-sizing: border-box;
+}
+
+.hero-text {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.hero-text h1 {
+  margin-bottom: 4px;
+}
+
+.page-narrow {
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.page-wide {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.page-loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--text);
+}
+
+.page-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.booking-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.booking-layout > .card {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .booking-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 16px;
+}
+
+@media (max-width: 560px) {
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 22px;
+  margin-bottom: 18px;
+  text-align: left;
+  background: var(--bg);
+  box-shadow: var(--card-shadow);
+}
+
+.card h3 {
+  margin: 0 0 12px;
+  font-size: 17px;
+  color: var(--text-h);
+}
+
+.card-success {
+  text-align: center;
+  max-width: 440px;
+  margin: 40px auto 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.field label {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.field input,
+.field select,
+.field textarea {
+  font: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-h);
+  transition: border-color 0.15s;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.field textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.field-inline {
+  flex-direction: row;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.field-inline label {
+  width: 100%;
+}
+
+.toolbar {
+  display: flex;
+  gap: 24px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.button {
+  font: inherit;
+  font-weight: 600;
+  padding: 11px 20px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: opacity 0.15s, transform 0.05s;
+}
+
+.button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.button-block {
+  display: block;
+  width: 100%;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.button-confirm {
+  margin-top: 4px;
+  padding: 14px 20px;
+  font-size: 16px;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: none;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button-danger {
+  color: #d64545;
+}
+
+.error-text {
+  color: #d64545;
+  font-size: 14px;
+  margin: 4px 0;
+}
+
+.hint-text {
+  color: var(--text);
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+.calendar {
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  text-align: center;
+}
+
+.calendar-weekdays {
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.calendar-day {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.calendar-day:hover:not(:disabled) {
+  background: var(--code-bg);
+}
+
+.calendar-day:disabled {
+  color: var(--border);
+  cursor: not-allowed;
+}
+
+.calendar-day-today {
+  border-color: var(--border);
+  font-weight: 600;
+}
+
+.calendar-day-selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-card {
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 24px;
+  width: 340px;
+  max-width: 90vw;
+  box-shadow: var(--card-shadow);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.slot-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.slot-button {
+  font: inherit;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.slot-button:hover {
+  border-color: var(--accent-border);
+}
+
+.slot-button-active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.table th,
+.table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.table-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.badge-confirmada {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.badge-atendida {
+  background: rgba(46, 160, 67, 0.15);
+  color: #2ea043;
+}
+
+.badge-no_asistio {
+  background: rgba(219, 154, 4, 0.15);
+  color: #d99a04;
+}
+
+.badge-cancelada {
+  background: rgba(214, 69, 69, 0.15);
+  color: #d64545;
+}
+
+.treatment-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.treatment-list li {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.treatment-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.empty-state {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 24px;
+  text-align: center;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.schedule-week {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.schedule-day {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.schedule-day:last-child {
+  border-bottom: none;
+}
+
+.schedule-day strong {
+  width: 90px;
+  flex-shrink: 0;
+  color: var(--text-h);
+  font-size: 14px;
+}
+
+.schedule-blocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.schedule-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 12px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.schedule-chip-remove {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+}
+
+.schedule-chip-remove:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
