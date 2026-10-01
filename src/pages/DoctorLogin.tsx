@@ -1,6 +1,6 @@
 import axios from "axios";
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function DoctorLogin() {
@@ -8,8 +8,10 @@ export default function DoctorLogin() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { login } = useAuth();
+  const { user, loading, login } = useAuth();
   const navigate = useNavigate();
+
+  if (!loading && user) return <Navigate to="/agenda" replace />;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,9 +24,7 @@ export default function DoctorLogin() {
       if (axios.isAxiosError(err) && err.response) {
         setError("Usuario o contraseña incorrectos.");
       } else {
-        setError(
-          "No pudimos conectar con el servidor. Puede ser un problema de CORS o de red — revisá la consola del navegador."
-        );
+        setError("No pudimos conectar con el servidor. Revisá tu conexión e intentá de nuevo.");
       }
     } finally {
       setSubmitting(false);
@@ -32,32 +32,34 @@ export default function DoctorLogin() {
   }
 
   return (
-    <div className="page-narrow">
-      <form className="card" onSubmit={handleSubmit}>
-        <h2>Acceso doctores</h2>
-        <div className="field">
-          <label htmlFor="username">Usuario</label>
-          <input
-            id="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoFocus
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="password">Contraseña</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
-        {error && <p className="error-text">{error}</p>}
-        <button className="button" type="submit" disabled={submitting}>
-          {submitting ? "Ingresando..." : "Entrar"}
-        </button>
-      </form>
-    </div>
+    <form className="card narrow-card login-card" onSubmit={handleSubmit}>
+      <div className="eyebrow">Acceso profesional</div>
+      <h2>Ingresá a tu agenda</h2>
+      <div className="sub">Usá el usuario y la contraseña que te dio la clínica.</div>
+      <div className="field">
+        <label htmlFor="username">Usuario</label>
+        <input
+          id="username"
+          autoComplete="username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+        />
+      </div>
+      <div className="field">
+        <label htmlFor="password">Contraseña</label>
+        <input
+          id="password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+      </div>
+      {error && <p className="error-text">{error}</p>}
+      <button className="button button-block" type="submit" disabled={submitting || !username || !password}>
+        {submitting ? "Ingresando..." : "Ingresar"}
+      </button>
+    </form>
   );
 }

@@ -77,11 +77,13 @@ export default function UserManagement() {
   }
 
   return (
-    <div className="page-wide">
-      <h2>Usuarios del sistema</h2>
-      <p className="hint-text">
-        Creá cuentas de doctores o administradores, y reseteá contraseñas cuando haga falta.
-      </p>
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <h2>Usuarios del sistema</h2>
+          <div className="sub">Creá cuentas de doctores o administradores y reseteá contraseñas.</div>
+        </div>
+      </div>
 
       <section className="card">
         <h3>Nuevo usuario</h3>

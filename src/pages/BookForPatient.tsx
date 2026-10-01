@@ -1,126 +1,83 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { AvailabilityCalendar } from "../components/AvailabilityCalendar";
+import { AvailabilityPicker } from "../components/AvailabilityPicker";
+import { DoctorList } from "../components/DoctorList";
+import { Icon } from "../components/Icon";
 import { useAuth } from "../context/AuthContext";
+import { formatCI, formatDateLong, formatTime, onlyDigits, toISODate } from "../lib/format";
 import {
   checkPatientExists,
   createAppointment,
   extractFieldErrors,
-  getAvailability,
   getDoctors,
   type ApiFieldErrors,
   type Doctor,
   type Slot,
 } from "../services/api";
 
-function todayISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 export default function BookForPatient() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.role === "ADMIN";
 
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [myDoctorId, setMyDoctorId] = useState<number | null>(null);
-  const [selectedDoctor, setSelectedDoctor] = useState<number | null>(null);
+  const [doctors, setDoctors] = useState<Doctor[] | null>(null);
+  const [doctor, setDoctor] = useState<Doctor | null>(null);
 
-  const [documentNumber, setDocumentNumber] = useState("");
+  const [ci, setCi] = useState("");
   const [checking, setChecking] = useState(false);
-  const [checked, setChecked] = useState(false);
-  const [knownPatient, setKnownPatient] = useState(false);
-
+  const [ciError, setCiError] = useState("");
+  const [patient, setPatient] = useState<{ ci: string; exists: boolean; name: string } | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [notes, setNotes] = useState("");
 
-  const [date, setDate] = useState(todayISO());
-  const [showAvailability, setShowAvailability] = useState(false);
-  const [availability, setAvailability] = useState<Slot[]>([]);
-  const [loadingAvailability, setLoadingAvailability] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
-
+  const [slot, setSlot] = useState<Slot | null>(null);
+  const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<ApiFieldErrors>({});
 
   useEffect(() => {
-    getDoctors().then((list) => {
-      setDoctors(list);
-      if (!isAdmin && user) {
-        const mine = list.find((d) => d.email === user.email);
-        if (mine) {
-          setMyDoctorId(mine.id);
-          setSelectedDoctor(mine.id);
-        }
-      }
-    });
-  }, [isAdmin, user]);
+    getDoctors()
+      .then((list) => {
+        setDoctors(list);
+        // El backend no expone el perfil de doctor del usuario logueado: se lo identifica por el correo.
+        const own = isAdmin ? list[0] : list.find((d) => d.email === user?.email);
+        setDoctor((current) => current ?? own ?? null);
+      })
+      .catch(() => setDoctors([]));
+  }, [isAdmin, user?.email]);
 
-  const activeDoctor = isAdmin ? selectedDoctor : myDoctorId;
-
-  async function handleShowAvailability() {
-    if (!checked || !activeDoctor || !date) return;
-    setShowAvailability(true);
-    setLoadingAvailability(true);
-    setSelectedSlot(null);
-    try {
-      setAvailability(await getAvailability(activeDoctor, date));
-    } catch {
-      setAvailability([]);
-    } finally {
-      setLoadingAvailability(false);
+  async function handleSearch(e: FormEvent) {
+    e.preventDefault();
+    if (ci.length < 4) {
+      setCiError("Ingresá el CI completo, solo números.");
+      return;
     }
-  }
-
-  function handleSelectDate(iso: string) {
-    setDate(iso);
-    setShowAvailability(false);
-    setSelectedSlot(null);
-  }
-
-  async function handleCheckCedula() {
-    const trimmed = documentNumber.trim();
-    if (!trimmed) return;
+    setCiError("");
     setChecking(true);
-    setErrors({});
     try {
-      const result = await checkPatientExists(trimmed);
-      if (result.exists) {
-        setKnownPatient(true);
-        setName(result.name ?? "");
-      } else {
-        setKnownPatient(false);
-        setName("");
-      }
+      const result = await checkPatientExists(ci);
+      setPatient({ ci, exists: result.exists, name: result.name ?? "" });
     } catch {
-      // No pudimos verificar (red/servidor): seguimos igual, se completa
-      // como paciente nuevo en vez de bloquear el agendamiento.
-      setKnownPatient(false);
-      setName("");
+      setCiError("No se pudo verificar el CI. Intentá de nuevo.");
     } finally {
       setChecking(false);
-      setChecked(true);
     }
   }
 
-  async function handleSubmit() {
-    if (!activeDoctor || !selectedSlot) return;
+  async function handleConfirm() {
+    if (!patient || !doctor || !slot) return;
     setSubmitting(true);
     setErrors({});
     try {
       await createAppointment({
-        document_number: documentNumber.trim(),
-        name,
-        phone,
-        email,
-        doctor: activeDoctor,
-        start_datetime: selectedSlot,
-        notes: notes || undefined,
+        document_number: patient.ci,
+        doctor: doctor.id,
+        start_datetime: slot.start_datetime,
+        notes: reason.trim(),
+        ...(patient.exists ? {} : { name: name.trim(), phone: phone.trim(), email: email.trim() }),
       });
-      navigate(`/pacientes/${documentNumber.trim()}`);
+      navigate(`/pacientes/${patient.ci}`);
     } catch (err) {
       setErrors(extractFieldErrors(err));
     } finally {
@@ -128,136 +85,134 @@ export default function BookForPatient() {
     }
   }
 
+  const newPatientReady = patient?.exists || (name.trim() && onlyDigits(phone).length >= 6);
+  const ownProfileMissing = !isAdmin && doctors !== null && !doctor;
+
   return (
-    <div className="page-narrow">
-      <h2>Agendar cita a un paciente</h2>
-
-      <div className="card">
-        <div className="field field-inline">
-          <label htmlFor="cedula">Cédula del paciente</label>
-          <input
-            id="cedula"
-            value={documentNumber}
-            onChange={(e) => {
-              setDocumentNumber(e.target.value);
-              setChecked(false);
-            }}
-            onKeyDown={(e) => e.key === "Enter" && handleCheckCedula()}
-          />
-          <button className="button" onClick={handleCheckCedula} disabled={checking}>
-            {checking ? "Buscando..." : "Buscar"}
-          </button>
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <h2>Agendar turno a un paciente</h2>
+          <div className="sub">Buscá al paciente por CI, elegí día y horario y confirmá.</div>
         </div>
+        <button className="button button-secondary" onClick={() => navigate("/agenda")}>
+          <Icon name="chevronLeft" size={16} /> Agenda
+        </button>
+      </div>
 
-        {checked && (
-          <>
-            <p className="hint-text">
-              {knownPatient
-                ? `Paciente reconocido: ${name}. Confirmá sus datos de contacto.`
-                : "Paciente nuevo: completá sus datos."}
-            </p>
+      {ownProfileMissing && (
+        <p className="error-text">Tu usuario no tiene un perfil de doctor asociado. Pedile a un administrador que lo cree.</p>
+      )}
 
+      <div className="booking-grid">
+        <div>
+          <form className="card card-pad" onSubmit={handleSearch}>
+            <h3>1 · Paciente</h3>
             <div className="field">
-              <label htmlFor="name">Nombre completo</label>
-              <input id="name" value={name} onChange={(e) => setName(e.target.value)} />
-              {errors.name && <p className="error-text">{errors.name.join(" ")}</p>}
-            </div>
-            <div className="field">
-              <label htmlFor="phone">Teléfono</label>
-              <input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              {errors.phone && <p className="error-text">{errors.phone.join(" ")}</p>}
-            </div>
-            <div className="field">
-              <label htmlFor="email">Correo electrónico</label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              {errors.email && <p className="error-text">{errors.email.join(" ")}</p>}
-            </div>
-
-            {isAdmin && (
-              <div className="field">
-                <label htmlFor="doctor">Doctor</label>
-                <select
-                  id="doctor"
-                  value={selectedDoctor ?? ""}
+              <label htmlFor="ci">CI del paciente</label>
+              <div className="input-row">
+                <input
+                  id="ci"
+                  className="input"
+                  inputMode="numeric"
+                  placeholder="Solo números"
+                  maxLength={15}
+                  value={ci}
                   onChange={(e) => {
-                    setSelectedDoctor(Number(e.target.value) || null);
-                    setShowAvailability(false);
+                    setCi(onlyDigits(e.target.value));
+                    setPatient(null);
                   }}
-                >
-                  <option value="">Seleccioná un doctor</option>
-                  {doctors.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.full_name} — {d.specialty}
-                    </option>
-                  ))}
-                </select>
+                />
+                <button className="button" type="submit" disabled={checking}>
+                  {checking ? "..." : "Buscar"}
+                </button>
+              </div>
+            </div>
+            {ciError && <p className="error-text">{ciError}</p>}
+
+            {patient?.exists && (
+              <div className="notice notice-ok">
+                Paciente registrado: <b>{patient.name}</b> (CI {formatCI(patient.ci)}).
               </div>
             )}
-
-            {activeDoctor && (
+            {patient && !patient.exists && (
               <>
-                <AvailabilityCalendar selectedDate={date} onSelectDate={handleSelectDate} />
-
-                {!showAvailability ? (
-                  <button className="button button-block" onClick={handleShowAvailability}>
-                    Ver detalles del {new Date(date + "T00:00:00").toLocaleDateString("es-UY")}
-                  </button>
-                ) : (
-                  <div className="field">
-                    <label>Horarios disponibles</label>
-                    {loadingAvailability ? (
-                      <p className="hint-text">Buscando horarios...</p>
-                    ) : availability.length === 0 ? (
-                      <p className="hint-text">No hay horarios libres ese día.</p>
-                    ) : (
-                      <div className="slot-grid">
-                        {availability.map((slot) => (
-                          <button
-                            key={slot.start_datetime}
-                            className={`slot-button ${
-                              selectedSlot === slot.start_datetime ? "slot-button-active" : ""
-                            }`}
-                            onClick={() => setSelectedSlot(slot.start_datetime)}
-                          >
-                            {new Date(slot.start_datetime).toLocaleTimeString("es-UY", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {errors.start_datetime && (
-                      <p className="error-text">{errors.start_datetime.join(" ")}</p>
-                    )}
-                  </div>
-                )}
+                <div className="notice">Paciente nuevo: completá sus datos.</div>
+                <div className="field">
+                  <label htmlFor="name">Nombre completo</label>
+                  <input id="name" value={name} onChange={(e) => setName(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label htmlFor="phone">Teléfono</label>
+                  <input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                </div>
+                <div className="field">
+                  <label htmlFor="email">
+                    Correo <span className="optional">(opcional)</span>
+                  </label>
+                  <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                </div>
               </>
             )}
+          </form>
 
-            <div className="field">
-              <label htmlFor="notes">Notas (opcional)</label>
-              <textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          {isAdmin && (
+            <div className="card card-pad">
+              <h3>Doctor</h3>
+              {doctors === null ? (
+                <p className="sub">Cargando...</p>
+              ) : (
+                <DoctorList
+                  doctors={doctors}
+                  selectedId={doctor?.id ?? null}
+                  onSelect={(d) => {
+                    setDoctor(d);
+                    setSlot(null);
+                  }}
+                />
+              )}
             </div>
+          )}
+        </div>
 
-            {errors.non_field_errors && (
-              <p className="error-text">{errors.non_field_errors.join(" ")}</p>
-            )}
+        <div className="card card-pad">
+          <h3>2 · Día y horario</h3>
+          {doctor ? (
+            <AvailabilityPicker key={doctor.id} doctorId={doctor.id} selectedSlot={slot} onSelectSlot={setSlot} />
+          ) : (
+            <p className="empty-state">Elegí un doctor para ver su disponibilidad.</p>
+          )}
 
-            <button
-              className="button"
-              onClick={handleSubmit}
-              disabled={submitting || !activeDoctor || !selectedSlot || !name || !phone || !email}
-            >
-              {submitting ? "Agendando..." : "Confirmar cita"}
-            </button>
-          </>
-        )}
+          {slot && patient && newPatientReady && doctor && (
+            <div className="confirm-inline">
+              <h3>3 · Confirmar</h3>
+              <dl className="summary">
+                <div><dt>Paciente</dt><dd>{patient.exists ? patient.name : name.trim()}</dd></div>
+                <div><dt>CI</dt><dd>{formatCI(patient.ci)}</dd></div>
+                <div><dt>Doctor</dt><dd>{doctor.full_name}</dd></div>
+                <div><dt>Fecha</dt><dd>{formatDateLong(toISODate(new Date(slot.start_datetime)))}</dd></div>
+                <div><dt>Horario</dt><dd>{formatTime(slot.start_datetime)}</dd></div>
+              </dl>
+              <div className="field">
+                <label htmlFor="reason">
+                  Motivo de la consulta <span className="optional">(opcional)</span>
+                </label>
+                <input id="reason" maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />
+              </div>
+              {Object.entries(errors).map(([field, messages]) => (
+                <p key={field} className="error-text">
+                  {Array.isArray(messages) ? messages.join(" ") : String(messages)}
+                </p>
+              ))}
+              <button className="button button-block" onClick={handleConfirm} disabled={submitting}>
+                {submitting ? "Agendando..." : "Confirmar turno"}
+              </button>
+            </div>
+          )}
+          {slot && (!patient || !newPatientReady) && (
+            <p className="notice">Completá los datos del paciente para confirmar el turno.</p>
+          )}
+        </div>
       </div>
     </div>
   );

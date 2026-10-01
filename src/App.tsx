@@ -1,18 +1,19 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { Layout } from "./components/Layout";
+import { DashboardLayout } from "./components/DashboardLayout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { PublicLayout } from "./components/PublicLayout";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import BookForPatient from "./pages/BookForPatient";
 import DoctorAgenda from "./pages/DoctorAgenda";
 import DoctorLogin from "./pages/DoctorLogin";
 import PatientBooking from "./pages/PatientBooking";
 import PatientDetail from "./pages/PatientDetail";
+import Patients from "./pages/Patients";
 import UserManagement from "./pages/UserManagement";
 import WeeklySchedule from "./pages/WeeklySchedule";
 
 function HomeRoute() {
-  // El formulario público de reserva es para pacientes sin cuenta; un
-  // doctor/admin logueado no debe verlo, va directo a su agenda.
+  // El portal público es para pacientes sin cuenta; un doctor/admin logueado va a su agenda.
   const { user, loading } = useAuth();
   if (loading) return null;
   if (user) return <Navigate to="/agenda" replace />;
@@ -23,34 +24,23 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Layout>
-          <Routes>
+        <Routes>
+          <Route element={<PublicLayout />}>
             <Route path="/" element={<HomeRoute />} />
             <Route path="/login" element={<DoctorLogin />} />
-            <Route
-              path="/agenda"
-              element={
-                <ProtectedRoute>
-                  <DoctorAgenda />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/agenda/nueva"
-              element={
-                <ProtectedRoute>
-                  <BookForPatient />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/pacientes/:documentNumber"
-              element={
-                <ProtectedRoute>
-                  <PatientDetail />
-                </ProtectedRoute>
-              }
-            />
+          </Route>
+          <Route
+            element={
+              <ProtectedRoute>
+                <DashboardLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/agenda" element={<DoctorAgenda />} />
+            <Route path="/agenda/nueva" element={<BookForPatient />} />
+            <Route path="/pacientes" element={<Patients />} />
+            <Route path="/pacientes/:documentNumber" element={<PatientDetail />} />
+            <Route path="/horario" element={<WeeklySchedule />} />
             <Route
               path="/usuarios"
               element={
@@ -59,17 +49,9 @@ function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/horario"
-              element={
-                <ProtectedRoute>
-                  <WeeklySchedule />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Layout>
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </AuthProvider>
     </BrowserRouter>
   );

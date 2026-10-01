@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
-import { AvailabilityCalendar } from "../components/AvailabilityCalendar";
+import { useEffect, useState, type FormEvent } from "react";
+import { AvailabilityPicker } from "../components/AvailabilityPicker";
+import { DoctorList } from "../components/DoctorList";
+import { Icon } from "../components/Icon";
+import { StepIndicator } from "../components/StepIndicator";
+import { formatCI, formatDateLong, formatTime, onlyDigits, toISODate } from "../lib/format";
 import {
   checkPatientExists,
   createAppointment,
   extractFieldErrors,
-  getAvailability,
   getDoctors,
   type ApiFieldErrors,
   type Appointment,
@@ -12,113 +15,109 @@ import {
   type Slot,
 } from "../services/api";
 
-type Step = "cedula" | "datos" | "confirmada";
+type Step = "ci" | "datos" | "doctor" | "confirmar" | "exito";
 
-function todayISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+const STEP_INDEX: Record<Step, number> = { ci: 0, datos: 0, doctor: 1, confirmar: 3, exito: 3 };
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function PatientBooking() {
-  const [step, setStep] = useState<Step>("cedula");
+  const [step, setStep] = useState<Step>("ci");
 
-  const [documentNumber, setDocumentNumber] = useState("");
+  const [ci, setCi] = useState("");
+  const [ciError, setCiError] = useState("");
   const [checking, setChecking] = useState(false);
-  const [knownPatient, setKnownPatient] = useState(false);
-  const [cedulaError, setCedulaError] = useState("");
+  // null = todavía no se verificó; existente → solo tenemos el nombre (el backend no expone más).
+  const [patient, setPatient] = useState<{ exists: boolean; name: string } | null>(null);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [notes, setNotes] = useState("");
+  const [dataErrors, setDataErrors] = useState<Record<string, string>>({});
 
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [selectedDoctor, setSelectedDoctor] = useState<number | null>(null);
-  const [date, setDate] = useState(todayISO());
-  const [showAvailability, setShowAvailability] = useState(false);
-  const [availability, setAvailability] = useState<Slot[]>([]);
-  const [loadingAvailability, setLoadingAvailability] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [doctors, setDoctors] = useState<Doctor[] | null>(null);
+  const [doctor, setDoctor] = useState<Doctor | null>(null);
+  const [slot, setSlot] = useState<Slot | null>(null);
+  const [reason, setReason] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<ApiFieldErrors>({});
   const [confirmed, setConfirmed] = useState<Appointment | null>(null);
 
   useEffect(() => {
-    getDoctors().then(setDoctors).catch(() => setDoctors([]));
+    getDoctors()
+      .then((list) => {
+        setDoctors(list);
+        if (list.length > 0) setDoctor((current) => current ?? list[0]);
+      })
+      .catch(() => setDoctors([]));
   }, []);
 
-  async function handleShowAvailability() {
-    if (!selectedDoctor || !date) return;
-    setShowAvailability(true);
-    setLoadingAvailability(true);
-    setSelectedSlot(null);
-    try {
-      setAvailability(await getAvailability(selectedDoctor, date));
-    } catch {
-      setAvailability([]);
-    } finally {
-      setLoadingAvailability(false);
-    }
+  function go(next: Step) {
+    setStep(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function handleSelectDoctor(id: number | null) {
-    setSelectedDoctor(id);
-    setShowAvailability(false);
-    setAvailability([]);
-    setSelectedSlot(null);
-  }
-
-  function handleSelectDate(iso: string) {
-    setDate(iso);
-    setShowAvailability(false);
-    setSelectedSlot(null);
-  }
-
-  async function handleCheckCedula() {
-    const trimmed = documentNumber.trim();
-    if (!trimmed) {
-      setCedulaError("Ingresá tu cédula para continuar.");
+  async function handleIdentify(e: FormEvent) {
+    e.preventDefault();
+    if (ci.length < 4) {
+      setCiError("Ingresá tu número de CI completo, solo números.");
       return;
     }
-    setCedulaError("");
+    setCiError("");
     setChecking(true);
     try {
-      const result = await checkPatientExists(trimmed);
+      const result = await checkPatientExists(ci);
       if (result.exists) {
-        setKnownPatient(true);
-        setName(result.name ?? "");
+        setPatient({ exists: true, name: result.name ?? "" });
+        go("doctor");
       } else {
-        setKnownPatient(false);
-        setName("");
+        setPatient({ exists: false, name: "" });
+        go("datos");
       }
     } catch {
-      // No pudimos verificar (red/servidor): seguimos igual y pedimos
-      // los datos como si fuera la primera vez, no bloqueamos la reserva.
-      setKnownPatient(false);
-      setName("");
+      setCiError("No pudimos verificar tu CI. Revisá tu conexión e intentá de nuevo.");
     } finally {
       setChecking(false);
-      setStep("datos");
     }
   }
 
-  async function handleSubmit() {
-    if (!selectedDoctor || !selectedSlot) return;
+  function handleNewPatientData(e: FormEvent) {
+    e.preventDefault();
+    const found: Record<string, string> = {};
+    if (!name.trim()) found.name = "Ingresá tu nombre completo.";
+    if (onlyDigits(phone).length < 6) found.phone = "Ingresá un número de teléfono válido.";
+    if (email.trim() && !EMAIL_PATTERN.test(email.trim())) found.email = "Revisá el formato del correo.";
+    setDataErrors(found);
+    if (Object.keys(found).length === 0) go("doctor");
+  }
+
+  function handleSelectDoctor(d: Doctor) {
+    if (d.id === doctor?.id) return;
+    setDoctor(d);
+    setSlot(null);
+  }
+
+  function handleSelectSlot(s: Slot) {
+    setSlot(s);
+    setErrors({});
+    go("confirmar");
+  }
+
+  async function handleConfirm() {
+    if (!doctor || !slot) return;
     setSubmitting(true);
     setErrors({});
     try {
       const appointment = await createAppointment({
-        document_number: documentNumber.trim(),
-        name,
-        phone,
-        email,
-        doctor: selectedDoctor,
-        start_datetime: selectedSlot,
-        notes: notes || undefined,
+        document_number: ci,
+        doctor: doctor.id,
+        start_datetime: slot.start_datetime,
+        notes: reason.trim(),
+        ...(patient?.exists ? {} : { name: name.trim(), phone: phone.trim(), email: email.trim() }),
       });
       setConfirmed(appointment);
-      setStep("confirmada");
+      go("exito");
     } catch (err) {
       setErrors(extractFieldErrors(err));
     } finally {
@@ -126,198 +125,227 @@ export default function PatientBooking() {
     }
   }
 
-  function resetAll() {
-    setStep("cedula");
-    setDocumentNumber("");
-    setKnownPatient(false);
+  function restart() {
+    setCi("");
+    setPatient(null);
     setName("");
     setPhone("");
     setEmail("");
-    setNotes("");
-    setSelectedDoctor(null);
-    setShowAvailability(false);
-    setSelectedSlot(null);
-    setAvailability([]);
+    setDataErrors({});
+    setSlot(null);
+    setReason("");
     setErrors({});
     setConfirmed(null);
+    go("ci");
   }
 
-  if (step === "confirmada" && confirmed) {
-    return (
-      <div className="page-narrow">
-        <div className="card card-success">
-          <h2>Cita confirmada</h2>
-          <p>
-            Quedó agendada tu cita con <strong>{confirmed.doctor_name}</strong> el{" "}
-            <strong>{new Date(confirmed.start_datetime).toLocaleString("es-UY")}</strong>.
-          </p>
-          <p>
-            Guardá tu cédula (<strong>{confirmed.patient}</strong>): la vas a necesitar para
-            consultar, cambiar o cancelar tu cita más adelante.
-          </p>
-          <button className="button" onClick={resetAll}>
-            Agendar otra cita
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const patientName = patient?.exists ? patient.name : name.trim();
+  const slotTaken = Boolean(errors.start_datetime);
 
-  if (step === "cedula") {
+  if (step === "ci") {
     return (
-      <div className="page-narrow">
-        <div className="hero-text">
-          <h1>Reservá tu cita</h1>
-          <p className="hint-text">Rápido, sin cuenta ni contraseña.</p>
+      <div className="hero">
+        <div className="card hero-card">
+          <div className="eyebrow">Agenda online</div>
+          <h1>Agendá tu consulta de forma simple.</h1>
+          <p>
+            Ingresá tu número de documento para consultar si ya tenemos tus datos y elegí el doctor, el día y el
+            horario que prefieras. Sin crear cuenta ni contraseña.
+          </p>
+          <StepIndicator current={0} />
         </div>
-        <div className="card">
-          <p>Ingresá tu cédula de identidad para empezar.</p>
+
+        <form className="card booking-card" onSubmit={handleIdentify}>
+          <h2>Comenzar</h2>
+          <div className="sub">Solo necesitamos tu CI para empezar.</div>
           <div className="field">
-            <label htmlFor="cedula">Cédula de identidad</label>
+            <label htmlFor="ci">Número de documento (CI)</label>
             <input
-              id="cedula"
-              value={documentNumber}
-              onChange={(e) => setDocumentNumber(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleCheckCedula()}
-              placeholder="Ej: 4.123.456-7"
+              id="ci"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="Ej. 4567890"
+              maxLength={15}
+              value={ci}
+              onChange={(e) => setCi(onlyDigits(e.target.value))}
               autoFocus
             />
+            <span className="field-hint">Solo números, sin puntos, comas ni guiones.</span>
           </div>
-          {cedulaError && <p className="error-text">{cedulaError}</p>}
-          <button className="button button-block" onClick={handleCheckCedula} disabled={checking}>
+          {ciError && <p className="error-text">{ciError}</p>}
+          <button className="button button-block" type="submit" disabled={checking}>
             {checking ? "Verificando..." : "Continuar"}
           </button>
-        </div>
+          <div className="notice">
+            Si es tu primera consulta, después te vamos a pedir tu nombre y teléfono. El correo electrónico es
+            opcional.
+          </div>
+        </form>
       </div>
     );
   }
 
-  return (
-    <div className="page-wide">
-      <button className="link-button" onClick={() => setStep("cedula")}>
-        &larr; Cambiar cédula
-      </button>
-      <h2>Reservar una cita</h2>
-
-      <div className="booking-layout">
-        <div className="card">
-          <h3>Tus datos</h3>
-          {knownPatient ? (
-            <p className="hint-text">
-              ¡Hola de nuevo, {name}! Confirmá tus datos de contacto para agendar.
-            </p>
-          ) : (
-            <p className="hint-text">
-              No encontramos esa cédula: completá tus datos para tu primera cita.
-            </p>
-          )}
-
+  if (step === "datos") {
+    return (
+      <>
+        <StepIndicator current={STEP_INDEX.datos} />
+        <form className="card narrow-card" onSubmit={handleNewPatientData}>
+          <div className="eyebrow">Nuevo paciente</div>
+          <h2>Completá tus datos</h2>
+          <div className="sub">No encontramos una ficha previa con el CI {formatCI(ci)}.</div>
           <div className="field">
             <label htmlFor="name">Nombre completo</label>
-            <input id="name" value={name} onChange={(e) => setName(e.target.value)} />
-            {errors.name && <p className="error-text">{errors.name.join(" ")}</p>}
+            <input id="name" placeholder="Nombre y apellido" value={name} onChange={(e) => setName(e.target.value)} />
+            {dataErrors.name && <p className="error-text">{dataErrors.name}</p>}
           </div>
           <div className="field">
             <label htmlFor="phone">Teléfono</label>
-            <input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} />
-            {errors.phone && <p className="error-text">{errors.phone.join(" ")}</p>}
+            <input
+              id="phone"
+              type="tel"
+              inputMode="tel"
+              placeholder="0981 123 456"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+            {dataErrors.phone && <p className="error-text">{dataErrors.phone}</p>}
           </div>
           <div className="field">
-            <label htmlFor="email">Correo electrónico</label>
+            <label htmlFor="email">
+              Correo electrónico <span className="optional">(opcional)</span>
+            </label>
             <input
               id="email"
               type="email"
+              placeholder="nombre@correo.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
-            {errors.email && <p className="error-text">{errors.email.join(" ")}</p>}
+            {dataErrors.email && <p className="error-text">{dataErrors.email}</p>}
           </div>
+          <button className="button button-block" type="submit">
+            Continuar al agendamiento
+          </button>
+          <button className="button button-secondary button-block" type="button" onClick={() => go("ci")}>
+            Volver
+          </button>
+        </form>
+      </>
+    );
+  }
+
+  if (step === "doctor") {
+    return (
+      <>
+        <StepIndicator current={doctor ? 2 : 1} />
+        <div className="title-row">
+          <div>
+            <h2>{patient?.exists ? `Hola, ${patientName}` : "Elegí un doctor"}</h2>
+            <div className="sub">Seleccioná con quién querés consultar y elegí un día con turnos libres.</div>
+          </div>
+          <button className="button button-secondary" onClick={() => go(patient?.exists ? "ci" : "datos")}>
+            Volver
+          </button>
+        </div>
+        <div className="booking-grid">
+          <div className="card card-pad">
+            {doctors === null ? <p className="sub">Cargando doctores...</p> : (
+              <DoctorList doctors={doctors} selectedId={doctor?.id ?? null} onSelect={handleSelectDoctor} />
+            )}
+          </div>
+          <div className="card card-pad">
+            {doctor ? (
+              <AvailabilityPicker key={doctor.id} doctorId={doctor.id} selectedSlot={slot} onSelectSlot={handleSelectSlot} />
+            ) : (
+              <p className="empty-state">Elegí un doctor para ver su disponibilidad.</p>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (step === "confirmar" && doctor && slot) {
+    return (
+      <>
+        <StepIndicator current={STEP_INDEX.confirmar} />
+        <div className="card narrow-card">
+          <div className="eyebrow">Confirmar turno</div>
+          <h2>Revisá los datos</h2>
+          <dl className="summary">
+            <div><dt>Paciente</dt><dd>{patientName}</dd></div>
+            <div><dt>CI</dt><dd>{formatCI(ci)}</dd></div>
+            <div><dt>Doctor</dt><dd>{doctor.full_name}</dd></div>
+            <div><dt>Fecha</dt><dd>{formatDateLong(toISODate(new Date(slot.start_datetime)))}</dd></div>
+            <div><dt>Horario</dt><dd>{formatTime(slot.start_datetime)}</dd></div>
+          </dl>
           <div className="field">
-            <label htmlFor="notes">Notas (opcional)</label>
-            <textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <label htmlFor="reason">
+              Motivo de la consulta <span className="optional">(opcional)</span>
+            </label>
+            <input
+              id="reason"
+              placeholder="Ej. Control, dolor de muela, limpieza..."
+              maxLength={200}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
           </div>
-        </div>
 
-        <div className="card">
-          <h3>Elegí doctor y horario</h3>
-          {doctors.length === 0 ? (
-            <p className="empty-state">Todavía no hay doctores disponibles para reservar.</p>
+          {Object.entries(errors).map(([field, messages]) => (
+            <p key={field} className="error-text">
+              {Array.isArray(messages) ? messages.join(" ") : String(messages)}
+            </p>
+          ))}
+
+          {slotTaken ? (
+            <button className="button button-block" onClick={() => { setSlot(null); go("doctor"); }}>
+              Elegir otro horario
+            </button>
           ) : (
-            <div className="field">
-              <label htmlFor="doctor">Doctor</label>
-              <select
-                id="doctor"
-                value={selectedDoctor ?? ""}
-                onChange={(e) => handleSelectDoctor(Number(e.target.value) || null)}
-              >
-                <option value="">Seleccioná un doctor</option>
-                {doctors.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.full_name} — {d.specialty}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <button className="button button-block" onClick={handleConfirm} disabled={submitting}>
+              {submitting ? "Agendando..." : "Confirmar agendamiento"}
+            </button>
           )}
-
-          {selectedDoctor && (
-            <>
-              <AvailabilityCalendar selectedDate={date} onSelectDate={handleSelectDate} />
-
-              {!showAvailability ? (
-                <button className="button button-block" onClick={handleShowAvailability}>
-                  Ver detalles del {new Date(date + "T00:00:00").toLocaleDateString("es-UY")}
-                </button>
-              ) : (
-                <div className="field">
-                  <label>
-                    Horarios disponibles el{" "}
-                    {new Date(date + "T00:00:00").toLocaleDateString("es-UY", {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                    })}
-                  </label>
-                  {loadingAvailability ? (
-                    <p className="hint-text">Buscando horarios...</p>
-                  ) : availability.length === 0 ? (
-                    <p className="hint-text">No hay horarios libres ese día. Probá otro día.</p>
-                  ) : (
-                    <div className="slot-grid">
-                      {availability.map((slot) => (
-                        <button
-                          key={slot.start_datetime}
-                          className={`slot-button ${
-                            selectedSlot === slot.start_datetime ? "slot-button-active" : ""
-                          }`}
-                          onClick={() => setSelectedSlot(slot.start_datetime)}
-                        >
-                          {new Date(slot.start_datetime).toLocaleTimeString("es-UY", {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {errors.start_datetime && (
-                    <p className="error-text">{errors.start_datetime.join(" ")}</p>
-                  )}
-                </div>
-              )}
-            </>
-          )}
+          <button className="button button-secondary button-block" onClick={() => go("doctor")} disabled={submitting}>
+            Cambiar horario
+          </button>
         </div>
+      </>
+    );
+  }
+
+  if (step === "exito" && confirmed) {
+    return (
+      <div className="card narrow-card success-card">
+        <div className="success-icon">
+          <Icon name="check" size={30} />
+        </div>
+        <h2>Turno confirmado</h2>
+        <p className="sub">
+          Tu consulta quedó registrada. Presentate unos minutos antes de la hora indicada. Para consultar o cancelar
+          tu turno, comunicate con la clínica indicando tu CI.
+        </p>
+        <dl className="summary">
+          <div><dt>Paciente</dt><dd>{confirmed.patient_name}</dd></div>
+          <div><dt>CI</dt><dd>{formatCI(confirmed.patient)}</dd></div>
+          <div><dt>Doctor</dt><dd>{confirmed.doctor_name}</dd></div>
+          <div><dt>Fecha</dt><dd>{formatDateLong(toISODate(new Date(confirmed.start_datetime)))}</dd></div>
+          <div><dt>Horario</dt><dd>{formatTime(confirmed.start_datetime)}</dd></div>
+        </dl>
+        <button className="button" onClick={restart}>
+          Nuevo agendamiento
+        </button>
       </div>
+    );
+  }
 
-      {errors.non_field_errors && <p className="error-text">{errors.non_field_errors.join(" ")}</p>}
-
-      <button
-        className="button button-block button-confirm"
-        onClick={handleSubmit}
-        disabled={submitting || !selectedDoctor || !selectedSlot || !name || !phone || !email}
-      >
-        {submitting ? "Agendando..." : "Confirmar cita"}
+  // Estado inconsistente (p. ej. se perdió el slot): volver al inicio del flujo.
+  return (
+    <div className="card narrow-card">
+      <p className="sub">Algo salió mal con tu selección.</p>
+      <button className="button" onClick={restart}>
+        Empezar de nuevo
       </button>
     </div>
   );

@@ -103,16 +103,22 @@ export interface TreatmentRecord {
   doctor: number;
   doctor_name: string;
   appointment: number | null;
+  reason: string;
+  /** Observaciones */
   description: string;
+  treatment: string;
   created_at: string;
 }
 
-export interface PatientDetail {
+export interface Patient {
   document_number: string;
   name: string;
   phone: string;
   email: string;
   created_at: string;
+}
+
+export interface PatientDetail extends Patient {
   appointments: Appointment[];
   treatment_records: TreatmentRecord[];
 }
@@ -129,7 +135,7 @@ export interface Me {
   date_joined: string;
 }
 
-interface Paginated<T> {
+export interface Paginated<T> {
   count: number;
   next: string | null;
   previous: string | null;
@@ -183,15 +189,26 @@ export async function getAvailability(doctorId: number, date: string) {
   return res.data as Slot[];
 }
 
+/** Días del rango [start, end] con al menos un horario libre. */
+export async function getAvailableDays(doctorId: number, start: string, end: string) {
+  const res = await client.get(`/doctors/${doctorId}/available-days/`, { params: { start, end } });
+  return res.data as { date: string; available_slots: number }[];
+}
+
 // --- Turnos: flujo paciente (público) ---
 
+/**
+ * Si la cédula ya existe, el backend ignora name/phone/email y usa los
+ * datos guardados; para un paciente nuevo name y phone son obligatorios.
+ */
 export interface CreateAppointmentInput {
   document_number: string;
-  name: string;
-  phone: string;
-  email: string;
+  name?: string;
+  phone?: string;
+  email?: string;
   doctor: number;
   start_datetime: string;
+  /** Motivo de la consulta. */
   notes?: string;
 }
 
@@ -200,39 +217,10 @@ export async function createAppointment(data: CreateAppointmentInput) {
   return res.data as Appointment;
 }
 
-/** Busca los turnos previos de una cédula. Devuelve null si nunca reservó (404). */
-export async function findPatientAppointments(documentNumber: string) {
-  try {
-    const res = await client.get(`/patients/${documentNumber}/appointments/`);
-    return (res.data as Paginated<Appointment>).results;
-  } catch (err) {
-    if (axios.isAxiosError(err) && err.response?.status === 404) return null;
-    throw err;
-  }
-}
-
-/**
- * Chequea si una cédula ya está cargada como paciente (con o sin
- * turnos previos — a diferencia de findPatientAppointments, reconoce
- * también a un paciente creado a mano desde Django admin).
- */
+/** Público: dice si la cédula ya es paciente (devuelve solo el nombre). */
 export async function checkPatientExists(documentNumber: string) {
   const res = await client.get(`/patients/${documentNumber}/exists/`);
   return res.data as { exists: boolean; name?: string };
-}
-
-export async function rescheduleAppointment(
-  documentNumber: string,
-  appointmentId: number,
-  data: { start_datetime?: string; notes?: string }
-) {
-  const res = await client.patch(`/patients/${documentNumber}/appointments/${appointmentId}/`, data);
-  return res.data as Appointment;
-}
-
-export async function cancelAppointmentAsPatient(documentNumber: string, appointmentId: number) {
-  const res = await client.patch(`/patients/${documentNumber}/appointments/${appointmentId}/cancel/`, {});
-  return res.data as Appointment;
 }
 
 // --- Turnos: flujo doctor/admin ---
@@ -253,6 +241,12 @@ export async function updateAppointmentStatus(
 }
 
 // --- Pacientes (doctor/admin) ---
+
+/** Un DOCTOR recibe solo los pacientes con los que tuvo turnos; un ADMIN, todos. */
+export async function getPatients(page = 1) {
+  const res = await client.get("/patients/", { params: { page } });
+  return res.data as Paginated<Patient>;
+}
 
 export async function getPatientDetail(documentNumber: string) {
   const res = await client.get(`/patients/${documentNumber}/`);
@@ -301,7 +295,14 @@ export async function setUserPassword(userId: number, newPassword: string) {
 
 export async function createTreatmentRecord(
   documentNumber: string,
-  data: { description: string; appointment?: number; doctor?: number }
+  data: {
+    reason?: string;
+    /** Observaciones (obligatorio). */
+    description: string;
+    treatment?: string;
+    appointment?: number;
+    doctor?: number;
+  }
 ) {
   const res = await client.post(`/patients/${documentNumber}/treatments/`, data);
   return res.data as TreatmentRecord;

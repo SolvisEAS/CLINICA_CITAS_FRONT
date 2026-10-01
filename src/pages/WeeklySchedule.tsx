@@ -91,12 +91,16 @@ export default function WeeklySchedule() {
   const canManage = !isAdmin || !!selectedDoctor;
 
   return (
-    <div className="page-wide">
-      <h2>Mi horario semanal</h2>
-      <p className="hint-text">
-        Definí los bloques horarios en los que atendés cada día. Los pacientes solo van a poder
-        reservar turnos dentro de estos horarios.
-      </p>
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <h2>{isAdmin ? "Horarios de atención" : "Mi horario semanal"}</h2>
+          <div className="sub">
+            Bloques horarios de atención de cada día. Los pacientes solo pueden reservar turnos dentro de estos
+            horarios.
+          </div>
+        </div>
+      </div>
 
       {isAdmin && (
         <div className="card">
