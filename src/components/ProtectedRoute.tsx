@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export function ProtectedRoute({
@@ -9,10 +9,16 @@ export function ProtectedRoute({
   children: ReactNode;
   requireAdmin?: boolean;
 }) {
-  const { user, loading } = useAuth();
+  const { user, loading, sessionEnd } = useAuth();
+  const location = useLocation();
 
   if (loading) return <p className="page-loading">Cargando...</p>;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) {
+    // Se recuerda a dónde quería ir para volver ahí después del login, salvo que haya cerrado
+    // sesión a propósito (el próximo en entrar puede ser otro doctor).
+    const state = sessionEnd === "logout" ? null : { from: location.pathname + location.search };
+    return <Navigate to="/login" replace state={state} />;
+  }
   if (requireAdmin && user.role !== "ADMIN") return <Navigate to="/agenda" replace />;
 
   return <>{children}</>;

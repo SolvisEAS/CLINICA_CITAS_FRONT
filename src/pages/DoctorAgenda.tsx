@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Icon } from "../components/Icon";
 import { useAuth } from "../context/AuthContext";
 import { STATUS_LABEL, addDays, formatCI, formatDateLong, formatTime, todayISO } from "../lib/format";
@@ -15,6 +15,8 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: "CANCELADA", label: "Canceladas" },
 ];
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 function greeting() {
   const hour = new Date().getHours();
   if (hour < 12) return "Buenos días";
@@ -26,10 +28,35 @@ export default function DoctorAgenda() {
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
 
-  const [date, setDate] = useState(todayISO());
-  const [filter, setFilter] = useState<Filter>("TODAS");
+  // Fecha, filtro y doctor viven en la URL (?fecha=&estado=&doctor=): al volver de una ficha
+  // la agenda queda en el mismo día. Se usa replace para que cambiar de día no llene el historial.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const estadoParam = searchParams.get("estado") as Filter | null;
+  const filter: Filter = estadoParam && FILTERS.some((f) => f.value === estadoParam) ? estadoParam : "TODAS";
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [doctorId, setDoctorId] = useState<number | null>(null);
+  const doctorId = isAdmin ? Number(searchParams.get("doctor")) || doctors[0]?.id || null : null;
+
+  // Se parte de la URL real y no de `searchParams`: React Router le pasa al updater los parámetros
+  // del último render, así que con varios clics seguidos en ‹ › se pisarían y se perdería alguno.
+  function updateParams(changes: (current: URLSearchParams) => Record<string, string | null>) {
+    const current = new URLSearchParams(window.location.search);
+    const next = new URLSearchParams(current);
+    for (const [key, value] of Object.entries(changes(current))) {
+      if (value === null) next.delete(key);
+      else next.set(key, value);
+    }
+    setSearchParams(next, { replace: true });
+  }
+  const fechaFrom = (params: URLSearchParams) => {
+    const value = params.get("fecha");
+    return value && ISO_DATE.test(value) ? value : todayISO();
+  };
+  const dateParam = (value: string) => ({ fecha: value === todayISO() ? null : value });
+  const setDate = (value: string) => updateParams(() => dateParam(value));
+  const shiftDate = (days: number) => updateParams((current) => dateParam(addDays(fechaFrom(current), days)));
+  const setFilter = (value: Filter) => updateParams(() => ({ estado: value === "TODAS" ? null : value }));
+  const setDoctorId = (id: number | null) => updateParams(() => ({ doctor: id ? String(id) : null }));
+  const date = fechaFrom(searchParams);
 
   // `key` identifica qué agenda está cargada; mientras no coincida con la pedida, se muestra "cargando".
   const requestKey = `${date}-${isAdmin ? doctorId : "own"}`;
@@ -51,10 +78,7 @@ export default function DoctorAgenda() {
   useEffect(() => {
     if (!isAdmin) return;
     getDoctors()
-      .then((list) => {
-        setDoctors(list);
-        setDoctorId((current) => current ?? list[0]?.id ?? null);
-      })
+      .then(setDoctors)
       .catch(() => setDoctors([]));
   }, [isAdmin]);
 
@@ -110,11 +134,11 @@ export default function DoctorAgenda() {
 
       <div className="agenda-toolbar">
         <div className="date-nav">
-          <button className="icon-button" onClick={() => setDate(addDays(date, -1))} aria-label="Día anterior">
+          <button className="icon-button" onClick={() => shiftDate(-1)} aria-label="Día anterior">
             <Icon name="chevronLeft" />
           </button>
           <input type="date" className="input" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
-          <button className="icon-button" onClick={() => setDate(addDays(date, 1))} aria-label="Día siguiente">
+          <button className="icon-button" onClick={() => shiftDate(1)} aria-label="Día siguiente">
             <Icon name="chevronRight" />
           </button>
           {date !== todayISO() && (

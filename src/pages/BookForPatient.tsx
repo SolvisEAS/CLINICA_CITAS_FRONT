@@ -5,6 +5,7 @@ import { DoctorList } from "../components/DoctorList";
 import { Icon } from "../components/Icon";
 import { useAuth } from "../context/AuthContext";
 import { formatCI, formatDateLong, formatTime, onlyDigits, toISODate } from "../lib/format";
+import { useGoBack } from "../lib/navigation";
 import {
   checkPatientExists,
   createAppointment,
@@ -18,6 +19,7 @@ import {
 export default function BookForPatient() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const goBack = useGoBack("/agenda");
   const isAdmin = user?.role === "ADMIN";
 
   const [doctors, setDoctors] = useState<Doctor[] | null>(null);
@@ -77,7 +79,8 @@ export default function BookForPatient() {
         notes: reason.trim(),
         ...(patient.exists ? {} : { name: name.trim(), phone: phone.trim(), email: email.trim() }),
       });
-      navigate(`/pacientes/${patient.ci}`);
+      // replace: "atrás" desde la ficha vuelve a la agenda, no a este formulario ya enviado.
+      navigate(`/pacientes/${patient.ci}`, { replace: true });
     } catch (err) {
       setErrors(extractFieldErrors(err));
     } finally {
@@ -95,7 +98,7 @@ export default function BookForPatient() {
           <h2>Agendar turno a un paciente</h2>
           <div className="sub">Buscá al paciente por CI, elegí día y horario y confirmá.</div>
         </div>
-        <button className="button button-secondary" onClick={() => navigate("/agenda")}>
+        <button className="button button-secondary" onClick={goBack}>
           <Icon name="chevronLeft" size={16} /> Agenda
         </button>
       </div>

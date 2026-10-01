@@ -1,6 +1,6 @@
 import axios from "axios";
 import { useState, type FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function DoctorLogin() {
@@ -8,10 +8,15 @@ export default function DoctorLogin() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { user, loading, login } = useAuth();
+  const { user, loading, sessionEnd, login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Página protegida que se quiso abrir sin sesión (la pone ProtectedRoute); si no, la agenda.
+  const from = (location.state as { from?: string } | null)?.from;
+  const destination = from && from !== "/login" ? from : "/agenda";
 
-  if (!loading && user) return <Navigate to="/agenda" replace />;
+  // replace: así "atrás" desde el panel no vuelve al login (que rebotaría de nuevo al panel).
+  if (!loading && user) return <Navigate to={destination} replace />;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -19,7 +24,7 @@ export default function DoctorLogin() {
     setSubmitting(true);
     try {
       await login(username, password);
-      navigate("/agenda");
+      navigate(destination, { replace: true });
     } catch (err) {
       if (axios.isAxiosError(err) && err.response) {
         setError("Usuario o contraseña incorrectos.");
@@ -36,6 +41,7 @@ export default function DoctorLogin() {
       <div className="eyebrow">Acceso profesional</div>
       <h2>Ingresá a tu agenda</h2>
       <div className="sub">Usá el usuario y la contraseña que te dio la clínica.</div>
+      {sessionEnd === "expired" && <div className="notice">Tu sesión venció. Ingresá de nuevo para continuar.</div>}
       <div className="field">
         <label htmlFor="username">Usuario</label>
         <input

@@ -1,9 +1,10 @@
 import axios from "axios";
 import { useEffect, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { Icon } from "../components/Icon";
 import { useAuth } from "../context/AuthContext";
 import { STATUS_LABEL, formatCI, formatDateShort, formatTime, initials } from "../lib/format";
+import { useGoBack } from "../lib/navigation";
 import {
   createTreatmentRecord,
   extractFieldErrors,
@@ -26,7 +27,7 @@ function lastVisit(patient: PatientDetailData) {
 
 export default function PatientDetail() {
   const { documentNumber = "" } = useParams<{ documentNumber: string }>();
-  const navigate = useNavigate();
+  const goBack = useGoBack("/pacientes");
   const { user } = useAuth();
   const isAdmin = user?.role === "ADMIN";
 
@@ -110,7 +111,7 @@ export default function PatientDetail() {
           <h2>Ficha del paciente</h2>
           <div className="sub">Datos de contacto, turnos e historial de tratamientos.</div>
         </div>
-        <button className="button button-secondary" onClick={() => navigate(-1)}>
+        <button className="button button-secondary" onClick={goBack}>
           <Icon name="chevronLeft" size={16} /> Volver
         </button>
       </div>

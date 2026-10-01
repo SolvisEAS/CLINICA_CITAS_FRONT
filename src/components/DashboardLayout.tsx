@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { initials } from "../lib/format";
 import { Icon, type IconName } from "./Icon";
@@ -12,13 +12,7 @@ const LINKS: { to: string; label: string; icon: IconName; adminOnly?: boolean }[
 
 export function DashboardLayout() {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
   const fullName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : "";
-
-  async function handleLogout() {
-    await logout();
-    navigate("/login");
-  }
 
   return (
     <div className="dashboard">
@@ -41,7 +35,8 @@ export function DashboardLayout() {
               <small>{user?.role === "ADMIN" ? "Administrador" : "Doctor"}</small>
             </span>
           </div>
-          <button className="sidebar-logout" onClick={handleLogout} aria-label="Cerrar sesión" title="Cerrar sesión">
+          {/* Al quedar sin usuario, ProtectedRoute redirige al login reemplazando la entrada del historial. */}
+          <button className="sidebar-logout" onClick={logout} aria-label="Cerrar sesión" title="Cerrar sesión">
             <Icon name="logout" /> <span>Cerrar sesión</span>
           </button>
         </div>

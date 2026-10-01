@@ -33,6 +33,9 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
+/** Se dispara en `window` cuando la sesión venció y no se pudo renovar (lo escucha AuthContext). */
+export const SESSION_EXPIRED_EVENT = "auth:session-expired";
+
 let refreshPromise: Promise<string | null> | null = null;
 
 async function refreshAccessToken(): Promise<string | null> {
@@ -53,18 +56,26 @@ client.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
     const original = error.config as (typeof error.config & { _retry?: boolean }) | undefined;
-    if (error.response?.status === 401 && original && !original._retry && getRefreshToken()) {
-      original._retry = true;
-      if (!refreshPromise) refreshPromise = refreshAccessToken();
-      const newAccess = await refreshPromise;
-      refreshPromise = null;
-      if (newAccess) {
-        original.headers = original.headers ?? {};
-        original.headers.Authorization = `Bearer ${newAccess}`;
-        return client(original);
-      }
+    if (error.response?.status !== 401 || !original || original._retry || !original.headers.Authorization) {
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
+    original._retry = true;
+    if (!refreshPromise) {
+      refreshPromise = refreshAccessToken().finally(() => {
+        refreshPromise = null;
+      });
+    }
+    const newAccess = await refreshPromise;
+    if (newAccess) {
+      original.headers.Authorization = `Bearer ${newAccess}`;
+      return client(original);
+    }
+    // No se pudo renovar: la app vuelve al login, y la request se reintenta sin token para que
+    // un endpoint público (portal del paciente) no falle solo por un token viejo en el navegador.
+    clearTokens();
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+    original.headers.delete("Authorization");
+    return client(original);
   }
 );
 

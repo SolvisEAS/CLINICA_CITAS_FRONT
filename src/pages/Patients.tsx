@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { formatCI, initials, onlyDigits } from "../lib/format";
 import { getPatients, type Patient } from "../services/api";
@@ -10,7 +10,10 @@ export default function Patients() {
   const [nextPage, setNextPage] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [search, setSearch] = useState("");
+  // En la URL (?q=) para que la búsqueda siga ahí al volver de una ficha.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const search = searchParams.get("q") ?? "";
+  const setSearch = (value: string) => setSearchParams(value ? { q: value } : {}, { replace: true });
 
   useEffect(() => {
     let ignore = false;

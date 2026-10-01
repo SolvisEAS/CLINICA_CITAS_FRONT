@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { AvailabilityPicker } from "../components/AvailabilityPicker";
 import { DoctorList } from "../components/DoctorList";
 import { Icon } from "../components/Icon";
@@ -17,18 +18,25 @@ import {
 
 type Step = "ci" | "datos" | "doctor" | "confirmar" | "exito";
 
+const STEPS: Step[] = ["ci", "datos", "doctor", "confirmar", "exito"];
+
 const STEP_INDEX: Record<Step, number> = { ci: 0, datos: 0, doctor: 1, confirmar: 3, exito: 3 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function PatientBooking() {
-  const [step, setStep] = useState<Step>("ci");
+  // El paso va en la URL (?paso=...) para que "atrás"/"adelante" del navegador recorran el flujo.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const requestedParam = searchParams.get("paso") as Step | null;
+  const requestedStep: Step = requestedParam && STEPS.includes(requestedParam) ? requestedParam : "ci";
 
   const [ci, setCi] = useState("");
   const [ciError, setCiError] = useState("");
   const [checking, setChecking] = useState(false);
-  // null = todavía no se verificó; existente → solo tenemos el nombre (el backend no expone más).
-  const [patient, setPatient] = useState<{ exists: boolean; name: string } | null>(null);
+  // null = todavía no se verificó. Guarda la CI verificada: si el paciente vuelve y la cambia, hay que revalidar.
+  // Si existe, solo tenemos el nombre (el backend no expone más).
+  const [patient, setPatient] = useState<{ ci: string; exists: boolean; name: string } | null>(null);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -53,10 +61,12 @@ export default function PatientBooking() {
       .catch(() => setDoctors([]));
   }, []);
 
-  function go(next: Step) {
-    setStep(next);
+  function go(next: Step, options?: { replace?: boolean }) {
+    setSearchParams(next === "ci" ? {} : { paso: next }, options);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+
+  const back = () => navigate(-1);
 
   async function handleIdentify(e: FormEvent) {
     e.preventDefault();
@@ -68,11 +78,18 @@ export default function PatientBooking() {
     setChecking(true);
     try {
       const result = await checkPatientExists(ci);
+      if (patient && patient.ci !== ci) {
+        // Volvió atrás y cambió de CI: no arrastrar datos ni horario del intento anterior.
+        setName("");
+        setPhone("");
+        setEmail("");
+        setSlot(null);
+      }
       if (result.exists) {
-        setPatient({ exists: true, name: result.name ?? "" });
+        setPatient({ ci, exists: true, name: result.name ?? "" });
         go("doctor");
       } else {
-        setPatient({ exists: false, name: "" });
+        setPatient({ ci, exists: false, name: "" });
         go("datos");
       }
     } catch {
@@ -117,7 +134,9 @@ export default function PatientBooking() {
         ...(patient?.exists ? {} : { name: name.trim(), phone: phone.trim(), email: email.trim() }),
       });
       setConfirmed(appointment);
-      go("exito");
+      setReason("");
+      // replace: "atrás" desde el éxito no debe volver a la confirmación de un turno ya creado.
+      go("exito", { replace: true });
     } catch (err) {
       setErrors(extractFieldErrors(err));
     } finally {
@@ -136,11 +155,27 @@ export default function PatientBooking() {
     setReason("");
     setErrors({});
     setConfirmed(null);
-    go("ci");
+    go("ci", { replace: true });
   }
 
   const patientName = patient?.exists ? patient.name : name.trim();
   const slotTaken = Boolean(errors.start_datetime);
+
+  // Cada paso exige los datos de los anteriores. Si faltan (recargó la página, abrió un link
+  // con ?paso=..., o cambió la CI y avanzó con "adelante"), se lo manda al paso que corresponde.
+  const identified = patient !== null && patient.ci === ci;
+  const dataReady = identified && (patient.exists || (name.trim() !== "" && onlyDigits(phone).length >= 6));
+  const allowed: Record<Step, boolean> = {
+    ci: true,
+    datos: identified && !patient.exists,
+    doctor: dataReady,
+    confirmar: dataReady && doctor !== null && slot !== null,
+    exito: confirmed !== null,
+  };
+  const step: Step = allowed[requestedStep] ? requestedStep : dataReady ? "doctor" : "ci";
+  if (step !== requestedStep) {
+    return <Navigate to={step === "ci" ? "/" : `/?paso=${step}`} replace />;
+  }
 
   if (step === "ci") {
     return (
@@ -226,7 +261,7 @@ export default function PatientBooking() {
           <button className="button button-block" type="submit">
             Continuar al agendamiento
           </button>
-          <button className="button button-secondary button-block" type="button" onClick={() => go("ci")}>
+          <button className="button button-secondary button-block" type="button" onClick={back}>
             Volver
           </button>
         </form>
@@ -243,7 +278,7 @@ export default function PatientBooking() {
             <h2>{patient?.exists ? `Hola, ${patientName}` : "Elegí un doctor"}</h2>
             <div className="sub">Seleccioná con quién querés consultar y elegí un día con turnos libres.</div>
           </div>
-          <button className="button button-secondary" onClick={() => go(patient?.exists ? "ci" : "datos")}>
+          <button className="button button-secondary" onClick={back}>
             Volver
           </button>
         </div>
@@ -299,7 +334,7 @@ export default function PatientBooking() {
           ))}
 
           {slotTaken ? (
-            <button className="button button-block" onClick={() => { setSlot(null); go("doctor"); }}>
+            <button className="button button-block" onClick={back}>
               Elegir otro horario
             </button>
           ) : (
@@ -307,7 +342,7 @@ export default function PatientBooking() {
               {submitting ? "Agendando..." : "Confirmar agendamiento"}
             </button>
           )}
-          <button className="button button-secondary button-block" onClick={() => go("doctor")} disabled={submitting}>
+          <button className="button button-secondary button-block" onClick={back} disabled={submitting}>
             Cambiar horario
           </button>
         </div>
@@ -340,13 +375,5 @@ export default function PatientBooking() {
     );
   }
 
-  // Estado inconsistente (p. ej. se perdió el slot): volver al inicio del flujo.
-  return (
-    <div className="card narrow-card">
-      <p className="sub">Algo salió mal con tu selección.</p>
-      <button className="button" onClick={restart}>
-        Empezar de nuevo
-      </button>
-    </div>
-  );
+  return null;
 }
