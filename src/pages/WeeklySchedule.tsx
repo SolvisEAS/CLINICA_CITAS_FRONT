@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import {
   createWeeklySchedule,
   deleteWeeklySchedule,
-  extractFieldErrors,
+  errorText,
   getDoctors,
   getWeeklySchedules,
   type Doctor,
@@ -24,15 +24,25 @@ function formatTime(t: string) {
   return t.slice(0, 5);
 }
 
-export default function WeeklySchedule() {
+/**
+ * mode "own": el doctor logueado gestiona su horario. mode "admin": un administrador elige
+ * el doctor. En ambos casos se manda el doctor explícito, así funciona igual para un
+ * superusuario que además es doctor (el backend le exige indicarlo).
+ */
+export default function WeeklySchedule({ mode }: { mode: "own" | "admin" }) {
   const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN";
+  const isAdmin = mode === "admin";
 
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [selectedDoctor, setSelectedDoctor] = useState<number | null>(null);
+  const [pickedDoctor, setPickedDoctor] = useState<number | null>(null);
+  const doctorId = isAdmin ? pickedDoctor : user?.doctor_id ?? null;
 
-  const [schedules, setSchedules] = useState<WeeklyScheduleBlock[]>([]);
-  const [loading, setLoading] = useState(false);
+  // `key` indica de qué doctor (y versión) es la lista cargada; si no coincide, se está cargando.
+  const [version, setVersion] = useState(0);
+  const requestKey = `${doctorId}-${version}`;
+  const [loaded, setLoaded] = useState<{ key: string; blocks: WeeklyScheduleBlock[] }>({ key: "", blocks: [] });
+  const loading = loaded.key !== requestKey;
+  const schedules = loading ? [] : loaded.blocks;
 
   const [weekday, setWeekday] = useState(0);
   const [startTime, setStartTime] = useState("09:00");
@@ -44,35 +54,30 @@ export default function WeeklySchedule() {
     if (isAdmin) getDoctors().then(setDoctors).catch(() => setDoctors([]));
   }, [isAdmin]);
 
-  function reload() {
-    if (isAdmin && !selectedDoctor) {
-      setSchedules([]);
-      return;
-    }
-    setLoading(true);
-    getWeeklySchedules(isAdmin ? selectedDoctor! : undefined)
-      .then(setSchedules)
-      .catch(() => setSchedules([]))
-      .finally(() => setLoading(false));
-  }
-
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- indicador de carga; `reload` también se reusa como handler tras agregar/borrar un bloque
-  useEffect(reload, [isAdmin, selectedDoctor]);
+  useEffect(() => {
+    if (!doctorId) return;
+    let ignore = false;
+    getWeeklySchedules(doctorId)
+      .then((blocks) => {
+        if (!ignore) setLoaded({ key: requestKey, blocks });
+      })
+      .catch(() => {
+        if (!ignore) setLoaded({ key: requestKey, blocks: [] });
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [doctorId, requestKey]);
 
   async function handleAdd() {
+    if (!doctorId) return;
     setError("");
     setSubmitting(true);
     try {
-      await createWeeklySchedule({
-        weekday,
-        start_time: startTime,
-        end_time: endTime,
-        doctor: isAdmin && selectedDoctor ? selectedDoctor : undefined,
-      });
-      reload();
+      await createWeeklySchedule({ weekday, start_time: startTime, end_time: endTime, doctor: doctorId });
+      setVersion((v) => v + 1);
     } catch (err) {
-      const fieldErrors = extractFieldErrors(err);
-      setError(Object.values(fieldErrors).flat().join(" "));
+      setError(errorText(err));
     } finally {
       setSubmitting(false);
     }
@@ -82,13 +87,13 @@ export default function WeeklySchedule() {
     setError("");
     try {
       await deleteWeeklySchedule(id);
-      setSchedules((prev) => prev.filter((s) => s.id !== id));
+      setLoaded((prev) => ({ ...prev, blocks: prev.blocks.filter((s) => s.id !== id) }));
     } catch {
       setError("No se pudo borrar ese horario.");
     }
   }
 
-  const canManage = !isAdmin || !!selectedDoctor;
+  const canManage = Boolean(doctorId);
 
   return (
     <div className="page">
@@ -108,8 +113,8 @@ export default function WeeklySchedule() {
             <label htmlFor="doctor">Doctor</label>
             <select
               id="doctor"
-              value={selectedDoctor ?? ""}
-              onChange={(e) => setSelectedDoctor(Number(e.target.value) || null)}
+              value={pickedDoctor ?? ""}
+              onChange={(e) => setPickedDoctor(Number(e.target.value) || null)}
             >
               <option value="">Seleccioná un doctor</option>
               {doctors.map((d) => (

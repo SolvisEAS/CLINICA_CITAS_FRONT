@@ -7,29 +7,26 @@ import { STATUS_LABEL, formatCI, formatDateShort, formatTime, initials } from ".
 import { useGoBack } from "../lib/navigation";
 import {
   createTreatmentRecord,
-  extractFieldErrors,
-  getDoctors,
+  errorText,
   getPatientDetail,
-  type Doctor,
+  type Appointment,
   type PatientDetail as PatientDetailData,
 } from "../services/api";
 
-/** Última consulta atendida; si no hay, el último turno ya pasado que no se canceló. */
-function lastVisit(patient: PatientDetailData) {
+/** Consulta propuesta para asociar a un registro nuevo: la última de este doctor que ya empezó. */
+function defaultAppointment(appointments: Appointment[], doctorId: number | null) {
   const now = Date.now();
-  const past = patient.appointments.filter(
-    (a) => a.status !== "CANCELADA" && new Date(a.start_datetime).getTime() <= now
+  return (
+    appointments
+      .filter((a) => a.doctor === doctorId && a.status !== "CANCELADA" && new Date(a.start_datetime).getTime() <= now)
+      .sort((a, b) => b.start_datetime.localeCompare(a.start_datetime))[0] ?? null
   );
-  const attended = past.filter((a) => a.status === "ATENDIDA");
-  const pick = (attended.length ? attended : past).sort((a, b) => b.start_datetime.localeCompare(a.start_datetime))[0];
-  return pick ? formatDateShort(pick.start_datetime) : "Sin consultas previas";
 }
 
 export default function PatientDetail() {
   const { documentNumber = "" } = useParams<{ documentNumber: string }>();
   const goBack = useGoBack("/pacientes");
   const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN";
 
   const [reloadToken, setReloadToken] = useState(0);
   const requestKey = `${documentNumber}-${reloadToken}`;
@@ -41,11 +38,11 @@ export default function PatientDetail() {
   // Al recargar después de guardar se sigue mostrando la ficha anterior hasta que llega la nueva.
   const firstLoad = state.key !== requestKey && state.patient?.document_number !== documentNumber;
 
+  // null = todavía no se tocó: se usa la consulta propuesta. "" = sin consulta asociada.
+  const [appointmentChoice, setAppointmentChoice] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [observations, setObservations] = useState("");
   const [treatment, setTreatment] = useState("");
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [recordDoctor, setRecordDoctor] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -72,44 +69,44 @@ export default function PatientDetail() {
     };
   }, [documentNumber, requestKey]);
 
-  useEffect(() => {
-    // Un ADMIN indica qué doctor firma el registro; a un DOCTOR lo asigna el backend.
-    if (isAdmin) getDoctors().then(setDoctors).catch(() => setDoctors([]));
-  }, [isAdmin]);
+  const patient = state.patient;
+  const linkable = (patient?.appointments ?? []).filter((a) => a.status !== "CANCELADA");
+  const proposed = patient ? defaultAppointment(patient.appointments, user?.doctor_id ?? null) : null;
+  const selectedAppointmentId = appointmentChoice ?? (proposed ? String(proposed.id) : "");
+  const selectedAppointment = linkable.find((a) => String(a.id) === selectedAppointmentId) ?? null;
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
-    if (!observations.trim() || (isAdmin && !recordDoctor)) return;
+    if (!observations.trim()) return;
     setSaving(true);
     setSaveError("");
     setSaved(false);
     try {
       await createTreatmentRecord(documentNumber, {
-        reason: reason.trim(),
+        reason: reason.trim() || selectedAppointment?.notes || "",
         description: observations.trim(),
         treatment: treatment.trim(),
-        doctor: isAdmin && recordDoctor ? recordDoctor : undefined,
+        appointment: selectedAppointment?.id,
       });
       setReason("");
       setObservations("");
       setTreatment("");
+      setAppointmentChoice(null);
       setSaved(true);
       setReloadToken((t) => t + 1);
     } catch (err) {
-      setSaveError(Object.values(extractFieldErrors(err)).flat().join(" ") || "No se pudo guardar el registro.");
+      setSaveError(errorText(err) || "No se pudo guardar el registro.");
     } finally {
       setSaving(false);
     }
   }
-
-  const patient = state.patient;
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
           <h2>Ficha del paciente</h2>
-          <div className="sub">Datos de contacto, turnos e historial de tratamientos.</div>
+          <div className="sub">Datos de contacto, consultas e historial de tratamientos.</div>
         </div>
         <button className="button button-secondary" onClick={goBack}>
           <Icon name="chevronLeft" size={16} /> Volver
@@ -134,14 +131,17 @@ export default function PatientDetail() {
               <dl className="info-list">
                 <div><dt>Teléfono</dt><dd>{patient.phone || "—"}</dd></div>
                 <div><dt>Correo</dt><dd>{patient.email || "—"}</dd></div>
-                <div><dt>Última consulta</dt><dd>{lastVisit(patient)}</dd></div>
+                <div>
+                  <dt>Última consulta</dt>
+                  <dd>{patient.last_visit ? formatDateShort(patient.last_visit) : "Sin consultas previas"}</dd>
+                </div>
               </dl>
             </div>
 
             <div className="card card-pad">
-              <h3>Turnos</h3>
+              <h3>Consultas</h3>
               {patient.appointments.length === 0 ? (
-                <p className="empty-state">Sin turnos registrados.</p>
+                <p className="empty-state">Sin consultas registradas.</p>
               ) : (
                 <ul className="mini-list">
                   {patient.appointments.map((a) => (
@@ -171,7 +171,7 @@ export default function PatientDetail() {
               patient.treatment_records.map((r) => (
                 <article key={r.id} className="record">
                   <small>
-                    {formatDateShort(r.created_at)} · {r.doctor_name}
+                    {formatDateShort(r.date)} · {r.doctor_name}
                   </small>
                   <b>{r.reason || "Consulta"}</b>
                   <div className="record-block">
@@ -190,30 +190,29 @@ export default function PatientDetail() {
 
             <form className="record-form" onSubmit={handleSave}>
               <h3>Agregar registro</h3>
-              {isAdmin && (
-                <div className="field">
-                  <label htmlFor="record-doctor">Doctor que firma el registro</label>
-                  <select
-                    id="record-doctor"
-                    value={recordDoctor ?? ""}
-                    onChange={(e) => setRecordDoctor(Number(e.target.value) || null)}
-                  >
-                    <option value="">Seleccioná un doctor</option>
-                    {doctors.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.full_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div className="field">
+                <label htmlFor="record-appointment">Consulta (define la fecha del registro)</label>
+                <select
+                  id="record-appointment"
+                  value={selectedAppointmentId}
+                  onChange={(e) => setAppointmentChoice(e.target.value)}
+                >
+                  <option value="">Sin consulta asociada (fecha de hoy)</option>
+                  {linkable.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {formatDateShort(a.start_datetime)} {formatTime(a.start_datetime)} · {a.doctor_name}
+                      {a.notes ? ` · ${a.notes}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="field">
                 <label htmlFor="reason">
-                  Motivo / tipo de consulta <span className="optional">(opcional)</span>
+                  Motivo de consulta <span className="optional">(opcional)</span>
                 </label>
                 <input
                   id="reason"
-                  placeholder="Ej. Control general"
+                  placeholder={selectedAppointment?.notes || "Ej. Control general"}
                   maxLength={200}
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
@@ -241,11 +240,7 @@ export default function PatientDetail() {
               </div>
               {saveError && <p className="error-text">{saveError}</p>}
               {saved && <p className="success-text">Registro guardado en el historial.</p>}
-              <button
-                className="button"
-                type="submit"
-                disabled={saving || !observations.trim() || (isAdmin && !recordDoctor)}
-              >
+              <button className="button" type="submit" disabled={saving || !observations.trim()}>
                 {saving ? "Guardando..." : "Guardar en el historial"}
               </button>
             </form>

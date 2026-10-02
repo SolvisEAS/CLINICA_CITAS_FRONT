@@ -114,6 +114,8 @@ export interface TreatmentRecord {
   doctor: number;
   doctor_name: string;
   appointment: number | null;
+  /** Fecha del registro: la de la consulta asociada o, si no tiene, la de carga. */
+  date: string;
   reason: string;
   /** Observaciones */
   description: string;
@@ -127,6 +129,8 @@ export interface Patient {
   phone: string;
   email: string;
   created_at: string;
+  /** Última consulta atendida (con cualquier doctor), o null. */
+  last_visit: string | null;
 }
 
 export interface PatientDetail extends Patient {
@@ -144,6 +148,10 @@ export interface Me {
   role: "DOCTOR" | "ADMIN" | "PACIENTE";
   is_active: boolean;
   date_joined: string;
+  /** Administra usuarios (grupo Administradores o superusuario). */
+  is_admin: boolean;
+  /** Perfil de doctor, o null si no tiene (un administrador). */
+  doctor_id: number | null;
 }
 
 export interface Paginated<T> {
@@ -155,11 +163,27 @@ export interface Paginated<T> {
 
 export type ApiFieldErrors = Record<string, string[]>;
 
+export const TOO_MANY_ATTEMPTS = "Hiciste demasiados intentos seguidos. Esperá un minuto y probá de nuevo.";
+
+/** El backend limita los intentos por IP en los endpoints públicos con CI (429). */
+export function isTooManyAttempts(err: unknown) {
+  return axios.isAxiosError(err) && err.response?.status === 429;
+}
+
 export function extractFieldErrors(err: unknown): ApiFieldErrors {
-  if (axios.isAxiosError(err) && err.response?.status === 400) {
-    return err.response.data as ApiFieldErrors;
+  if (axios.isAxiosError(err)) {
+    const status = err.response?.status;
+    if (status === 400) return err.response!.data as ApiFieldErrors;
+    if (status === 429) return { non_field_errors: [TOO_MANY_ATTEMPTS] };
+    const detail = (err.response?.data as { detail?: string } | undefined)?.detail;
+    if (detail) return { non_field_errors: [detail] };
   }
   return { non_field_errors: ["Ocurrió un error inesperado. Intentá de nuevo."] };
+}
+
+/** Todos los mensajes de error de una respuesta, en un solo texto. */
+export function errorText(err: unknown) {
+  return Object.values(extractFieldErrors(err)).flat().join(" ");
 }
 
 // --- Auth (doctor/admin) ---
@@ -234,13 +258,51 @@ export async function checkPatientExists(documentNumber: string) {
   return res.data as { exists: boolean; name?: string };
 }
 
-// --- Turnos: flujo doctor/admin ---
+/** Lo que el portal público muestra de una consulta (sin datos personales). */
+export interface PublicAppointment {
+  id: number;
+  doctor: number;
+  doctor_name: string;
+  doctor_specialty: string;
+  start_datetime: string;
+  end_datetime: string;
+  status: Appointment["status"];
+  /** El backend igual lo vuelve a validar al modificar. */
+  can_modify: boolean;
+}
 
-export async function getAgenda(date: string, doctorId?: number) {
-  const params: Record<string, string | number> = { date };
-  if (doctorId) params.doctor = doctorId;
-  const res = await client.get("/appointments/agenda/", { params });
+/** Consultas futuras pendientes de una CI. Una CI nunca registrada da lista vacía. */
+export async function getMyAppointments(documentNumber: string) {
+  try {
+    const res = await client.get(`/patients/${documentNumber}/appointments/`);
+    return (res.data as Paginated<PublicAppointment>).results;
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 404) return [];
+    throw err;
+  }
+}
+
+/** Cambiar de doctor exige también un horario nuevo. */
+export async function modifyMyAppointment(
+  documentNumber: string,
+  appointmentId: number,
+  data: { start_datetime: string; doctor?: number }
+) {
+  const res = await client.patch(`/patients/${documentNumber}/appointments/${appointmentId}/`, data);
+  return res.data as PublicAppointment;
+}
+
+// --- Turnos: flujo doctor ---
+
+export async function getAgenda(date: string) {
+  const res = await client.get("/appointments/agenda/", { params: { date } });
   return res.data as { date: string; doctor: number; appointments: Appointment[] };
+}
+
+/** Próximas consultas pendientes del doctor, de ahora en adelante. */
+export async function getUpcomingAppointments(page = 1) {
+  const res = await client.get("/appointments/upcoming/", { params: { page } });
+  return res.data as Paginated<Appointment>;
 }
 
 export async function updateAppointmentStatus(
@@ -251,11 +313,11 @@ export async function updateAppointmentStatus(
   return res.data as Appointment;
 }
 
-// --- Pacientes (doctor/admin) ---
+// --- Pacientes (doctor) ---
 
-/** Un DOCTOR recibe solo los pacientes con los que tuvo turnos; un ADMIN, todos. */
-export async function getPatients(page = 1) {
-  const res = await client.get("/patients/", { params: { page } });
+/** Pacientes con los que el doctor tuvo turnos; `search` filtra por nombre o CI en el servidor. */
+export async function getPatients(page = 1, search = "") {
+  const res = await client.get("/patients/", { params: search ? { page, search } : { page } });
   return res.data as Paginated<Patient>;
 }
 
@@ -264,7 +326,7 @@ export async function getPatientDetail(documentNumber: string) {
   return res.data as PatientDetail;
 }
 
-// --- Gestión de usuarios (solo ADMIN) ---
+// --- Usuarios médicos (solo administradores) ---
 
 export interface AdminUser {
   id: number;
@@ -275,33 +337,56 @@ export interface AdminUser {
   phone: string;
   role: "DOCTOR" | "ADMIN" | "PACIENTE";
   is_active: boolean;
+  is_superuser: boolean;
+  is_admin: boolean;
   date_joined: string;
+  last_login: string | null;
+  doctor: { id: number; specialty: string; appointment_duration_minutes: number; active: boolean } | null;
 }
 
-export interface CreateUserInput {
-  username: string;
-  password: string;
+export interface UserInput {
   first_name: string;
   last_name: string;
+  username: string;
   email: string;
-  phone?: string;
+  phone: string;
   role: "DOCTOR" | "ADMIN";
+  is_active: boolean;
   specialty?: string;
   appointment_duration_minutes?: number;
 }
 
-export async function getUsers(role?: "DOCTOR" | "ADMIN") {
-  const res = await client.get("/users/", { params: role ? { role } : {} });
-  return (res.data as Paginated<AdminUser>).results;
+/** Todos los usuarios del panel (recorre las páginas: son pocos). */
+export async function getAllUsers() {
+  const users: AdminUser[] = [];
+  for (let page = 1; ; page++) {
+    const res = await client.get("/users/", { params: { page } });
+    const data = res.data as Paginated<AdminUser>;
+    users.push(...data.results);
+    if (!data.next) return users;
+  }
 }
 
-export async function createUser(data: CreateUserInput) {
+export async function getUser(userId: number) {
+  const res = await client.get(`/users/${userId}/`);
+  return res.data as AdminUser;
+}
+
+export async function createUser(data: UserInput & { password: string; password_confirm: string }) {
   const res = await client.post("/users/", data);
   return res.data as AdminUser;
 }
 
-export async function setUserPassword(userId: number, newPassword: string) {
-  await client.patch(`/users/${userId}/set-password/`, { new_password: newPassword });
+export async function updateUser(userId: number, data: Partial<UserInput>) {
+  const res = await client.patch(`/users/${userId}/`, data);
+  return res.data as AdminUser;
+}
+
+export async function setUserPassword(userId: number, newPassword: string, confirmation: string) {
+  await client.patch(`/users/${userId}/set-password/`, {
+    new_password: newPassword,
+    new_password_confirm: confirmation,
+  });
 }
 
 export async function createTreatmentRecord(
@@ -311,8 +396,8 @@ export async function createTreatmentRecord(
     /** Observaciones (obligatorio). */
     description: string;
     treatment?: string;
+    /** Consulta a la que corresponde: de ahí sale la fecha del registro. */
     appointment?: number;
-    doctor?: number;
   }
 ) {
   const res = await client.post(`/patients/${documentNumber}/treatments/`, data);

@@ -1039,6 +1039,269 @@
   margin-top: 16px;
 }
 
+/* ---------- Inicio del portal público ---------- */
+
+.home-intro {
+  text-align: center;
+  max-width: 640px;
+  margin: 10px auto 28px;
+}
+
+.home-intro h1 {
+  font-size: 38px;
+  letter-spacing: -0.03em;
+  margin: 6px 0 8px;
+}
+
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.choice-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 28px;
+  margin: 0;
+}
+
+.choice-card .button-block {
+  margin-top: auto;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.choice-card .sub {
+  margin-bottom: 14px;
+}
+
+.choice-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  display: grid;
+  place-items: center;
+  margin-bottom: 6px;
+}
+
+.choice-link {
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.choice-link:hover {
+  border-color: #93c5fd;
+  transform: translateY(-2px);
+}
+
+/* ---------- Mis consultas (portal público) ---------- */
+
+.appointment-cards {
+  display: grid;
+  gap: 14px;
+  max-width: 760px;
+}
+
+.appointment-card {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin: 0;
+}
+
+.appointment-when {
+  min-width: 112px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  text-align: center;
+  flex: none;
+}
+
+.appointment-when strong {
+  display: block;
+  font-size: 17px;
+}
+
+.appointment-when span {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.appointment-what {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.appointment-what small,
+.appointment-what span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.appointment-what b {
+  font-size: 16px;
+}
+
+.change-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.change-summary .summary div:first-child dt {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.summary-muted {
+  opacity: 0.7;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.form-card .button-row {
+  justify-content: flex-start;
+}
+
+/* ---------- Pestañas ---------- */
+
+.tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #eaeef5;
+  margin-bottom: 18px;
+}
+
+.tabs-compact {
+  margin-bottom: 0;
+}
+
+.tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 14px;
+  border-radius: 9px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(23, 32, 51, 0.1);
+}
+
+.toolbar-date {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.day-group + .day-group {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.day-group h3 {
+  margin-bottom: 4px;
+}
+
+/* ---------- Panel de administración ---------- */
+
+.sidebar-section {
+  margin: 14px 12px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.sidebar-section:first-child {
+  margin-top: 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table td {
+  vertical-align: middle;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-activo {
+  background: var(--ok-soft);
+  color: #15803d;
+}
+
+.tag-inactivo {
+  background: #eef0f4;
+  color: var(--muted);
+}
+
+.form-card h3 {
+  margin-top: 22px;
+  margin-bottom: 0;
+}
+
+.form-card h3:first-child {
+  margin-top: 0;
+}
+
+.patient-item-contact {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+  width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.patient-item-meta {
+  text-align: right;
+  width: 110px;
+  flex: none;
+}
+
+.patient-item-meta small,
+.patient-item-meta b {
+  display: block;
+}
+
+.patient-item-meta b {
+  color: var(--ink);
+  font-size: 14px;
+}
+
 /* ---------- Horario semanal ---------- */
 
 .schedule-week {
@@ -1283,6 +1546,46 @@
   .table {
     display: block;
     overflow-x: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .choice-grid,
+  .change-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .home-intro h1 {
+    font-size: 30px;
+  }
+
+  .appointment-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .appointment-when {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .patient-item-contact {
+    display: none;
+  }
+
+  /* En la barra superior del celular los títulos de sección ocupan lugar sin aportar. */
+  .sidebar-section {
+    display: none;
+  }
+
+  .tabs {
+    display: flex;
+  }
+
+  .tab {
+    flex: 1;
   }
 }
 

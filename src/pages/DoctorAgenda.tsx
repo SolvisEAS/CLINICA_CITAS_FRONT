@@ -2,8 +2,14 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Icon } from "../components/Icon";
 import { useAuth } from "../context/AuthContext";
-import { STATUS_LABEL, addDays, formatCI, formatDateLong, formatTime, todayISO } from "../lib/format";
-import { getAgenda, getDoctors, updateAppointmentStatus, type Appointment, type Doctor } from "../services/api";
+import { STATUS_LABEL, addDays, formatCI, formatDateLong, formatTime, toISODate, todayISO } from "../lib/format";
+import {
+  errorText,
+  getAgenda,
+  getUpcomingAppointments,
+  updateAppointmentStatus,
+  type Appointment,
+} from "../services/api";
 
 type Filter = "TODAS" | Appointment["status"];
 
@@ -24,17 +30,20 @@ function greeting() {
   return "Buenas noches";
 }
 
+function fechaFrom(params: URLSearchParams) {
+  const value = params.get("fecha");
+  return value && ISO_DATE.test(value) ? value : todayISO();
+}
+
 export default function DoctorAgenda() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN";
-
-  // Fecha, filtro y doctor viven en la URL (?fecha=&estado=&doctor=): al volver de una ficha
-  // la agenda queda en el mismo día. Se usa replace para que cambiar de día no llene el historial.
+  // Vista, fecha y filtro viven en la URL (?vista=&fecha=&estado=): al volver de una ficha
+  // la agenda queda igual. Se usa replace para que cambiar de día no llene el historial.
   const [searchParams, setSearchParams] = useSearchParams();
+  const view = searchParams.get("vista") === "proximas" ? "proximas" : "dia";
+  const date = fechaFrom(searchParams);
   const estadoParam = searchParams.get("estado") as Filter | null;
   const filter: Filter = estadoParam && FILTERS.some((f) => f.value === estadoParam) ? estadoParam : "TODAS";
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const doctorId = isAdmin ? Number(searchParams.get("doctor")) || doctors[0]?.id || null : null;
 
   // Se parte de la URL real y no de `searchParams`: React Router le pasa al updater los parámetros
   // del último render, así que con varios clics seguidos en ‹ › se pisarían y se perdería alguno.
@@ -47,25 +56,71 @@ export default function DoctorAgenda() {
     }
     setSearchParams(next, { replace: true });
   }
-  const fechaFrom = (params: URLSearchParams) => {
-    const value = params.get("fecha");
-    return value && ISO_DATE.test(value) ? value : todayISO();
-  };
   const dateParam = (value: string) => ({ fecha: value === todayISO() ? null : value });
   const setDate = (value: string) => updateParams(() => dateParam(value));
   const shiftDate = (days: number) => updateParams((current) => dateParam(addDays(fechaFrom(current), days)));
   const setFilter = (value: Filter) => updateParams(() => ({ estado: value === "TODAS" ? null : value }));
-  const setDoctorId = (id: number | null) => updateParams(() => ({ doctor: id ? String(id) : null }));
-  const date = fechaFrom(searchParams);
+  const setView = (value: "dia" | "proximas") => updateParams(() => ({ vista: value === "dia" ? null : value }));
 
+  const firstName = user?.first_name || user?.username || "";
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <h2>
+            {greeting()}, {firstName}
+          </h2>
+          <div className="sub">{formatDateLong(todayISO())}</div>
+        </div>
+        <Link className="button" to="/agenda/nueva">
+          <Icon name="plus" size={16} /> Agendar turno
+        </Link>
+      </div>
+
+      <div className="tabs" role="tablist">
+        <button role="tab" aria-selected={view === "dia"} className={`tab ${view === "dia" ? "active" : ""}`} onClick={() => setView("dia")}>
+          Agenda del día
+        </button>
+        <button
+          role="tab"
+          aria-selected={view === "proximas"}
+          className={`tab ${view === "proximas" ? "active" : ""}`}
+          onClick={() => setView("proximas")}
+        >
+          Próximas consultas
+        </button>
+      </div>
+
+      {view === "dia" ? (
+        <DayView date={date} filter={filter} setDate={setDate} shiftDate={shiftDate} setFilter={setFilter} />
+      ) : (
+        <UpcomingView />
+      )}
+    </div>
+  );
+}
+
+function DayView({
+  date,
+  filter,
+  setDate,
+  shiftDate,
+  setFilter,
+}: {
+  date: string;
+  filter: Filter;
+  setDate: (value: string) => void;
+  shiftDate: (days: number) => void;
+  setFilter: (value: Filter) => void;
+}) {
   // `key` identifica qué agenda está cargada; mientras no coincida con la pedida, se muestra "cargando".
-  const requestKey = `${date}-${isAdmin ? doctorId : "own"}`;
   const [agenda, setAgenda] = useState<{ key: string; appointments: Appointment[]; failed: boolean }>({
     key: "",
     appointments: [],
     failed: false,
   });
-  const loading = agenda.key !== requestKey;
+  const loading = agenda.key !== date;
   const [actionError, setActionError] = useState("");
   // Reloj para "próximo turno": avanza solo mientras la agenda queda abierta.
   const [now, setNow] = useState(() => Date.now());
@@ -76,34 +131,26 @@ export default function DoctorAgenda() {
   }, []);
 
   useEffect(() => {
-    if (!isAdmin) return;
-    getDoctors()
-      .then(setDoctors)
-      .catch(() => setDoctors([]));
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (isAdmin && !doctorId) return;
     let ignore = false;
-    getAgenda(date, isAdmin ? doctorId ?? undefined : undefined)
+    getAgenda(date)
       .then((res) => {
-        if (!ignore) setAgenda({ key: requestKey, appointments: res.appointments, failed: false });
+        if (!ignore) setAgenda({ key: date, appointments: res.appointments, failed: false });
       })
       .catch(() => {
-        if (!ignore) setAgenda({ key: requestKey, appointments: [], failed: true });
+        if (!ignore) setAgenda({ key: date, appointments: [], failed: true });
       });
     return () => {
       ignore = true;
     };
-  }, [date, doctorId, isAdmin, requestKey]);
+  }, [date]);
 
   async function handleStatus(id: number, status: "ATENDIDA" | "NO_ASISTIO" | "CANCELADA") {
     setActionError("");
     try {
       const updated = await updateAppointmentStatus(id, status);
       setAgenda((prev) => ({ ...prev, appointments: prev.appointments.map((a) => (a.id === id ? updated : a)) }));
-    } catch {
-      setActionError("No se pudo actualizar el estado de la consulta.");
+    } catch (err) {
+      setActionError(errorText(err));
     }
   }
 
@@ -116,22 +163,9 @@ export default function DoctorAgenda() {
   const nextAppointment =
     date < todayISO() ? null : pending.find((a) => new Date(a.start_datetime).getTime() > now) ?? null;
   const visible = filter === "TODAS" ? appointments : appointments.filter((a) => a.status === filter);
-  const firstName = user?.first_name || user?.username || "";
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>
-            {greeting()}, {firstName}
-          </h2>
-          <div className="sub">{formatDateLong(date)}</div>
-        </div>
-        <Link className="button" to="/agenda/nueva">
-          <Icon name="plus" size={16} /> Agendar turno
-        </Link>
-      </div>
-
+    <>
       <div className="agenda-toolbar">
         <div className="date-nav">
           <button className="icon-button" onClick={() => shiftDate(-1)} aria-label="Día anterior">
@@ -147,21 +181,7 @@ export default function DoctorAgenda() {
             </button>
           )}
         </div>
-        {isAdmin && (
-          <select
-            className="input select-auto"
-            value={doctorId ?? ""}
-            onChange={(e) => setDoctorId(Number(e.target.value) || null)}
-            aria-label="Doctor"
-          >
-            {doctors.length === 0 && <option value="">Sin doctores</option>}
-            {doctors.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.full_name}
-              </option>
-            ))}
-          </select>
-        )}
+        <strong className="toolbar-date">{formatDateLong(date)}</strong>
       </div>
 
       <div className="stats">
@@ -186,7 +206,7 @@ export default function DoctorAgenda() {
 
       <div className="card card-pad">
         <div className="title-row">
-          <h3>Agenda del día</h3>
+          <h3>Consultas</h3>
           <select
             className="input select-auto"
             value={filter}
@@ -203,9 +223,7 @@ export default function DoctorAgenda() {
 
         {actionError && <p className="error-text">{actionError}</p>}
 
-        {isAdmin && !doctorId ? (
-          <p className="empty-state">Todavía no hay doctores cargados.</p>
-        ) : loading ? (
+        {loading ? (
           <p className="sub">Cargando agenda...</p>
         ) : agenda.failed ? (
           <p className="error-text">No se pudo cargar la agenda. Intentá de nuevo.</p>
@@ -248,6 +266,90 @@ export default function DoctorAgenda() {
           </ul>
         )}
       </div>
+    </>
+  );
+}
+
+function UpcomingView() {
+  const [items, setItems] = useState<Appointment[] | null>(null);
+  const [nextPage, setNextPage] = useState<number | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  useEffect(() => {
+    let ignore = false;
+    getUpcomingAppointments(1)
+      .then((res) => {
+        if (ignore) return;
+        setItems(res.results);
+        setNextPage(res.next ? 2 : null);
+      })
+      .catch(() => {
+        if (!ignore) setFailed(true);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  async function loadMore() {
+    if (!nextPage) return;
+    setLoadingMore(true);
+    try {
+      const res = await getUpcomingAppointments(nextPage);
+      setItems((prev) => [...(prev ?? []), ...res.results]);
+      setNextPage(res.next ? nextPage + 1 : null);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  if (failed) return <p className="error-text">No se pudieron cargar las próximas consultas.</p>;
+  if (items === null) return <p className="sub">Cargando próximas consultas...</p>;
+  if (items.length === 0) return <p className="empty-state">No tenés consultas pendientes a partir de ahora.</p>;
+
+  // Agrupadas por día, en el orden en que vienen (cronológico).
+  const groups: { day: string; appointments: Appointment[] }[] = [];
+  for (const a of items) {
+    const day = toISODate(new Date(a.start_datetime));
+    const last = groups[groups.length - 1];
+    if (last && last.day === day) last.appointments.push(a);
+    else groups.push({ day, appointments: [a] });
+  }
+
+  return (
+    <div className="card card-pad">
+      {groups.map((group) => (
+        <section key={group.day} className="day-group">
+          <h3>{formatDateLong(group.day)}</h3>
+          <ul className="appt-list">
+            {group.appointments.map((a) => (
+              <li key={a.id} className="appt">
+                <div className="appt-time">{formatTime(a.start_datetime)}</div>
+                <div className="appt-patient">
+                  <Link to={`/pacientes/${a.patient}`}>{a.patient_name}</Link>
+                  <small>
+                    CI {formatCI(a.patient)} · {a.notes || "Sin motivo indicado"}
+                  </small>
+                </div>
+                <div className="appt-actions">
+                  <span className="tag tag-confirmada">{STATUS_LABEL[a.status]}</span>
+                  <Link className="button button-secondary button-sm" to={`/pacientes/${a.patient}`}>
+                    Ver ficha
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+      {nextPage && (
+        <button className="button button-secondary button-block" onClick={loadMore} disabled={loadingMore}>
+          {loadingMore ? "Cargando..." : "Ver más"}
+        </button>
+      )}
     </div>
   );
 }

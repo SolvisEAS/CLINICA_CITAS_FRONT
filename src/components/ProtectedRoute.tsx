@@ -1,14 +1,13 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { homeFor } from "../lib/navigation";
 
-export function ProtectedRoute({
-  children,
-  requireAdmin = false,
-}: {
-  children: ReactNode;
-  requireAdmin?: boolean;
-}) {
+/**
+ * `require`: "doctor" (tiene perfil de doctor) o "admin" (administra usuarios). Quien no
+ * cumple va a su propia pantalla de inicio. El backend valida lo mismo con permisos.
+ */
+export function ProtectedRoute({ children, require }: { children: ReactNode; require?: "doctor" | "admin" }) {
   const { user, loading, sessionEnd } = useAuth();
   const location = useLocation();
 
@@ -19,7 +18,9 @@ export function ProtectedRoute({
     const state = sessionEnd === "logout" ? null : { from: location.pathname + location.search };
     return <Navigate to="/login" replace state={state} />;
   }
-  if (requireAdmin && user.role !== "ADMIN") return <Navigate to="/agenda" replace />;
+  if ((require === "doctor" && !user.doctor_id) || (require === "admin" && !user.is_admin)) {
+    return <Navigate to={homeFor(user)} replace />;
+  }
 
   return <>{children}</>;
 }
