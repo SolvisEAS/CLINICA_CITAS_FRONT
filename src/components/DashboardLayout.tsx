@@ -3,16 +3,39 @@ import { useAuth } from "../context/AuthContext";
 import { initials } from "../lib/format";
 import { Icon, type IconName } from "./Icon";
 
-const LINKS: { to: string; label: string; icon: IconName; adminOnly?: boolean }[] = [
+type NavItem = { to: string; label: string; icon: IconName };
+
+const DOCTOR_LINKS: NavItem[] = [
   { to: "/agenda", label: "Agenda", icon: "calendar" },
   { to: "/pacientes", label: "Pacientes", icon: "users" },
   { to: "/horario", label: "Mi horario", icon: "clock" },
-  { to: "/usuarios", label: "Usuarios", icon: "shield", adminOnly: true },
 ];
+
+const ADMIN_LINKS: NavItem[] = [
+  { to: "/panel", label: "Panel", icon: "shield" },
+  { to: "/usuarios", label: "Usuarios médicos", icon: "users" },
+  { to: "/horarios", label: "Horarios", icon: "clock" },
+];
+
+function NavGroup({ title, items }: { title?: string; items: NavItem[] }) {
+  return (
+    <>
+      {title && <div className="sidebar-section">{title}</div>}
+      {items.map((item) => (
+        <NavLink key={item.to} to={item.to} aria-label={item.label} title={item.label}>
+          <Icon name={item.icon} /> <span>{item.label}</span>
+        </NavLink>
+      ))}
+    </>
+  );
+}
 
 export function DashboardLayout() {
   const { user, logout } = useAuth();
   const fullName = user ? `${user.first_name} ${user.last_name}`.trim() || user.username : "";
+  const isDoctor = Boolean(user?.doctor_id);
+  const isAdmin = Boolean(user?.is_admin);
+  const roleLabel = isDoctor && isAdmin ? "Doctor · Administrador" : isAdmin ? "Administrador" : "Doctor";
 
   return (
     <div className="dashboard">
@@ -21,18 +44,15 @@ export function DashboardLayout() {
           <span className="logo-mark">+</span> Clínica
         </div>
         <nav className="sidebar-nav">
-          {LINKS.filter((l) => !l.adminOnly || user?.role === "ADMIN").map((l) => (
-            <NavLink key={l.to} to={l.to} aria-label={l.label} title={l.label}>
-              <Icon name={l.icon} /> <span>{l.label}</span>
-            </NavLink>
-          ))}
+          {isDoctor && <NavGroup title={isAdmin ? "Consultorio" : undefined} items={DOCTOR_LINKS} />}
+          {isAdmin && <NavGroup title={isDoctor ? "Administración" : undefined} items={ADMIN_LINKS} />}
         </nav>
         <div className="sidebar-footer">
           <div className="sidebar-user">
             <span className="avatar avatar-dark">{initials(fullName)}</span>
             <span>
               <b>{fullName}</b>
-              <small>{user?.role === "ADMIN" ? "Administrador" : "Doctor"}</small>
+              <small>{roleLabel}</small>
             </span>
           </div>
           {/* Al quedar sin usuario, ProtectedRoute redirige al login reemplazando la entrada del historial. */}

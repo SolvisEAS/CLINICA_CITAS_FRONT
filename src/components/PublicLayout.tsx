@@ -11,7 +11,7 @@ export function PublicLayout() {
           <NavLink to="/" end>
             Portal paciente
           </NavLink>
-          <NavLink to="/login">Acceso doctor</NavLink>
+          <NavLink to="/login">Acceso profesionales</NavLink>
         </nav>
       </header>
       <main className="wrap">

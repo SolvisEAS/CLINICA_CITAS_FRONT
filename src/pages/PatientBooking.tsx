@@ -6,10 +6,12 @@ import { Icon } from "../components/Icon";
 import { StepIndicator } from "../components/StepIndicator";
 import { formatCI, formatDateLong, formatTime, onlyDigits, toISODate } from "../lib/format";
 import {
+  TOO_MANY_ATTEMPTS,
   checkPatientExists,
   createAppointment,
   extractFieldErrors,
   getDoctors,
+  isTooManyAttempts,
   type ApiFieldErrors,
   type Appointment,
   type Doctor,
@@ -92,8 +94,10 @@ export default function PatientBooking() {
         setPatient({ ci, exists: false, name: "" });
         go("datos");
       }
-    } catch {
-      setCiError("No pudimos verificar tu CI. Revisá tu conexión e intentá de nuevo.");
+    } catch (err) {
+      setCiError(
+        isTooManyAttempts(err) ? TOO_MANY_ATTEMPTS : "No pudimos verificar tu CI. Revisá tu conexión e intentá de nuevo."
+      );
     } finally {
       setChecking(false);
     }
@@ -174,7 +178,7 @@ export default function PatientBooking() {
   };
   const step: Step = allowed[requestedStep] ? requestedStep : dataReady ? "doctor" : "ci";
   if (step !== requestedStep) {
-    return <Navigate to={step === "ci" ? "/" : `/?paso=${step}`} replace />;
+    return <Navigate to={step === "ci" ? "/agendar" : `/agendar?paso=${step}`} replace />;
   }
 
   if (step === "ci") {

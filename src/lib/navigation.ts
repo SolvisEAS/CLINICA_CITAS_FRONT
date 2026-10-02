@@ -1,4 +1,12 @@
 import { useLocation, useNavigate } from "react-router-dom";
+import type { Me } from "../services/api";
+
+/** Pantalla de inicio de cada usuario: el doctor va a su agenda; un administrador sin consultorio, al panel. */
+export function homeFor(user: Me) {
+  if (user.doctor_id) return "/agenda";
+  if (user.is_admin) return "/panel";
+  return "/sin-acceso";
+}
 
 /**
  * "Volver" dentro de la app: retrocede en el historial, salvo que esta sea la
